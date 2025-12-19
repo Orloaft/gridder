@@ -38,7 +38,8 @@ export function animateGridExit(
 }
 
 /**
- * Animates new grid cells entering with staggered sequence
+ * Animates new grid cells entering with staggered sequence (reverse of exit)
+ * Cards float up from below and fade in
  * @param gridElement The grid container element
  * @param onComplete Callback when all cells have entered
  */
@@ -58,25 +59,28 @@ export function animateGridEntrance(
     return tl;
   }
 
-  // Set initial state (invisible, scaled down, positioned above)
+  // Set initial state (invisible, positioned below, rotated opposite of exit)
+  // IMPORTANT: Override inline styles from card components
   gsap.set(cards, {
-    scale: 0,
+    y: 100,           // Start from below (mirror of exit's y: 100)
+    x: 0,             // Ensure no x offset
     opacity: 0,
-    y: -50,
-    rotation: -10,
+    rotation: -5,     // Opposite rotation of exit (exit uses rotation: 5)
+    scale: 1,         // Override inline scale: 0 from card components
     immediateRender: true,
   });
 
-  // Animate entrance with stagger
+  // Animate entrance with stagger (floating up from below)
   tl.to(cards, {
-    scale: 1,
-    opacity: 1,
     y: 0,
+    x: 0,
+    opacity: 1,
     rotation: 0,
-    duration: 0.4,
-    ease: 'back.out(1.7)',
+    scale: 1,           // Ensure scale is 1
+    duration: 0.4,      // Slightly longer than exit for smoother feel
+    ease: 'power2.out', // Mirror of exit's power2.in
     stagger: {
-      amount: 0.6, // Total stagger time
+      amount: 0.4,      // Same stagger duration as exit
       from: 'start',
     },
   });

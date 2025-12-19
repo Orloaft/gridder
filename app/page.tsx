@@ -1,17 +1,26 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
 import { GameGrid } from '@/components/Grid/GameGrid';
 import { animateScreenFadeIn } from '@/animations/screenAnimations';
 import { animateGridTransition } from '@/animations/gridTransitions';
 import { getStageById } from '@/data/stages';
+import { useBattleAutoAdvance } from '@/hooks/useBattleAutoAdvance';
+import { useBattleAnimations } from '@/hooks/useBattleAnimations';
 
 export default function Home() {
   const screenRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const isTransitioning = useRef(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Auto-advance battle events (200ms base for tick-based combat)
+  useBattleAutoAdvance(200);
+
+  // Handle battle animations
+  useBattleAnimations();
 
   const {
     gridOccupants,
@@ -58,6 +67,35 @@ export default function Home() {
     (window as any).__gridNavigate = navigateWithTransition;
   }, [navigateWithTransition]);
 
+  // Handle fullscreen toggle
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch((err) => {
+        console.error('Failed to enter fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      }).catch((err) => {
+        console.error('Failed to exit fullscreen:', err);
+      });
+    }
+  }, []);
+
+  // Listen for fullscreen changes (e.g., user pressing ESC)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
   // Get background gradient based on current screen
   const getBackgroundClass = () => {
     switch (currentScreen) {
@@ -74,98 +112,59 @@ export default function Home() {
     }
   };
 
-  // Get selected stage info for campaign map
-  const selectedStage = selectedStageId ? getStageById(selectedStageId) : null;
-  const isUnlocked = selectedStageId
-    ? !campaign.stagesCompleted.has(selectedStageId) &&
-      (selectedStageId === 1 || campaign.stagesCompleted.has(selectedStageId - 1))
-    : false;
-
   return (
-    <div
-      ref={screenRef}
-      className={`min-h-screen ${getBackgroundClass()} flex flex-col items-center justify-center p-8 gap-8 transition-colors duration-700`}
-      style={{ opacity: 0, transform: 'translateY(20px)' }}
-    >
-      {/* Single Persistent Grid */}
-      <GameGrid ref={gridRef} rows={8} cols={8} cellSize={100} occupants={gridOccupants} />
+    <>
+      <div
+        ref={screenRef}
+        className={`min-h-screen ${getBackgroundClass()} flex flex-col items-center justify-center p-8 gap-8 transition-colors duration-700`}
+      >
+        {/* Single Persistent Grid - everything happens here */}
+        <GameGrid ref={gridRef} rows={8} cols={8} cellSize={100} occupants={gridOccupants} />
+      </div>
 
-      {/* Stage Details Panel (only shown on campaign map with selected stage) */}
-      {currentScreen === ScreenType.CampaignMap && selectedStage && (
-        <div className="w-[800px] bg-gray-800/80 backdrop-blur-sm border-2 border-blue-500 rounded-lg p-6 shadow-2xl">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h2 className="text-2xl font-bold text-white mb-1">
-                Stage {selectedStage.id}: {selectedStage.name}
-              </h2>
-              <p className="text-gray-300 text-sm">
-                Difficulty:{' '}
-                <span
-                  className={
-                    selectedStage.difficulty === 'boss'
-                      ? 'text-red-400 font-bold'
-                      : selectedStage.difficulty === 'hard'
-                      ? 'text-orange-400'
-                      : selectedStage.difficulty === 'medium'
-                      ? 'text-yellow-400'
-                      : 'text-green-400'
-                  }
-                >
-                  {selectedStage.difficulty.toUpperCase()}
-                </span>
-              </p>
-            </div>
-
-            <div className="text-right">
-              <p className="text-sm text-gray-400">Rewards</p>
-              <p className="text-yellow-400 font-bold">💰 {selectedStage.rewards.gold} Gold</p>
-              <p className="text-purple-400 text-sm">⭐ {selectedStage.rewards.experience} XP</p>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <p className="text-sm text-gray-400 mb-2">Enemy Forces:</p>
-            <div className="flex gap-2">
-              {selectedStage.enemies.map((enemyType, idx) => (
-                <div
-                  key={idx}
-                  className="bg-gray-700/50 px-3 py-1 rounded text-red-400 text-sm font-medium"
-                >
-                  {enemyType.replace('_', ' ')}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            <p className="text-sm text-gray-400">
-              Team Size: <span className="text-blue-400">{selectedStage.playerSlots} Heroes</span>
-            </p>
-            <span className="text-gray-600">•</span>
-            <p className="text-sm text-gray-400">
-              Enemies: <span className="text-red-400">{selectedStage.enemySlots}</span>
-            </p>
-          </div>
-
-          {isUnlocked && (
-            <button className="mt-6 w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 active:scale-95 shadow-lg">
-              Start Battle →
-            </button>
-          )}
-
-          {campaign.stagesCompleted.has(selectedStageId!) && (
-            <div className="mt-6 text-center text-green-400 font-bold text-lg">
-              ✓ Completed
-            </div>
-          )}
-
-          {!isUnlocked && !campaign.stagesCompleted.has(selectedStageId!) && (
-            <div className="mt-6 text-center text-red-400 font-bold">
-              🔒 Complete previous stages to unlock
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      {/* Fullscreen button in bottom left corner - outside animated container */}
+      <button
+        onClick={toggleFullscreen}
+        className="fixed w-12 h-12 bg-gray-800 hover:bg-gray-700 border-2 border-gray-500 rounded-lg flex items-center justify-center transition-all hover:scale-110 shadow-lg"
+        style={{
+          zIndex: 9999,
+          bottom: '16px',
+          left: '16px'
+        }}
+        title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+      >
+        {isFullscreen ? (
+          // Exit fullscreen icon
+          <svg
+            className="w-6 h-6 text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M15 9V4.5M15 9h4.5M15 9l5.25-5.25M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 15v4.5m0-4.5h4.5m-4.5 0l5.25 5.25"
+            />
+          </svg>
+        ) : (
+          // Enter fullscreen icon
+          <svg
+            className="w-6 h-6 text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 8V4m0 0h4M4 4l5.5 5.5M20 8V4m0 0h-4m4 0l-5.5 5.5M4 16v4m0 0h4m-4 0l5.5-5.5M20 16v4m0 0h-4m4 0l-5.5-5.5"
+            />
+          </svg>
+        )}
+      </button>
+    </>
   );
 }

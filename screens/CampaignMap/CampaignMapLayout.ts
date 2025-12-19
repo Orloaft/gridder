@@ -94,7 +94,16 @@ export function createCampaignMapLayout(
       icon,
       variant,
       disabled: !isUnlocked,
-      onClick: () => onStageSelect(stage.id),
+      onClick: () => {
+        // When clicking an unlocked stage, navigate to PreBattle screen
+        onStageSelect(stage.id);
+        if (isUnlocked) {
+          // Use global navigate to go to PreBattle with transition
+          if ((window as any).__gridNavigate) {
+            (window as any).__gridNavigate(ScreenType.PreBattle);
+          }
+        }
+      },
       animationDelay: 0.2 + index * 0.05,
     });
   });

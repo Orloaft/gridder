@@ -50,6 +50,10 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
       style={{
         width: cols * cellSize,
         height: rows * cellSize,
+        backgroundImage: 'url(/gridbg.png)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
       }}
     >
       {/* Grid cells - very subtle background */}

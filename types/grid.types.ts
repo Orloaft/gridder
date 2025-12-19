@@ -32,16 +32,22 @@ export interface GridHero extends BaseGridOccupant {
   hp: number;
   maxHp: number;
   spritePath: string;
+  unitId?: string; // For battle animations
+  cooldown?: number; // Current cooldown (0-100)
+  cooldownRate?: number; // How fast cooldown fills
 }
 
 // Enemy occupant
 export interface GridEnemy extends BaseGridOccupant {
   type: GridOccupantType.Enemy;
-  enemyType: string;
+  enemyType?: string;
   name: string;
   hp: number;
   maxHp: number;
   spritePath: string;
+  unitId?: string; // For battle animations
+  cooldown?: number; // Current cooldown (0-100)
+  cooldownRate?: number; // How fast cooldown fills
 }
 
 // Button occupant (interactive UI elements)

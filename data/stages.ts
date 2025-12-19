@@ -21,14 +21,15 @@ export const CAMPAIGN_STAGES: Stage[] = [
     id: 2,
     name: 'Rat Infestation',
     difficulty: Difficulty.Tutorial,
-    enemies: ['plague_rat', 'plague_rat'],
-    playerSlots: 1,
-    enemySlots: 2,
+    enemies: ['plague_rat', 'plague_rat', 'plague_rat', 'plague_rat', 'plague_rat', 'plague_rat'],
+    playerSlots: 2,
+    enemySlots: 6,
     rewards: {
-      gold: 40,
-      experience: 30,
+      gold: 60,
+      experience: 50,
       recruitChance: 0.4,
     },
+    unlockRequirement: 1,
   },
 
   // Early stages (3-5)
