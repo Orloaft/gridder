@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* Pixelated rendering for pixel art icons */
+.pixelated {
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -webkit-crisp-edges;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Custom scrollbar for any overflow areas */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Animation performance optimizations */
+.grid-cell,
+.grid-occupant {
+  will-change: transform, opacity;
+}
+
+/* Damage number styles */
+.damage-number {
+  font-family: system-ui, -apple-system, sans-serif;
+  user-select: none;
+  pointer-events: none;
+}
+
+.damage-number--damage {
+  color: #F44336;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.damage-number--heal {
+  color: #4CAF50;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.damage-number--critical {
+  color: #FF5722;
+  text-shadow: 0 0 8px rgba(255, 87, 34, 0.8),
+               0 2px 4px rgba(0, 0, 0, 0.8);
+  font-weight: 900;
+}

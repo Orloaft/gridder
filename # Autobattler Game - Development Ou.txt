@@ -1,0 +1,552 @@
+# Autobattler Game - Development Outline
+
+## Project Overview
+A grid-based autobattler RPG where **ALL UI elements are represented as grid cells**. The 8x8 grid is the entire interface - no external menus, buttons, or panels. Everything (units, buttons, resources, text) occupies grid squares.
+
+## Core Philosophy
+- **Grid is everything**: Every interactive element must fit into grid cells
+- **Uniform cell size**: All grid cells are identical in size (80-100px recommended)
+- **Minimalist**: No overlays, popups, or external UI elements
+- **2D sprite-based**: All visuals are 2D assets positioned in grid cells
+
+---
+
+## Current State (Completed)
+
+### ✅ Done
+1. **Type System** (`src/types/grid.types.ts`)
+   - `GridOccupantType` enum (Hero, Enemy, Button, MenuItem, StatusPanel, Resource, Decoration)
+   - Discriminated union types for all occupant types
+   - Type guards for safe type checking
+
+2. **Base Grid Component** (`src/components/BattleGrid/BattleGrid.tsx`)
+   - Renders 8x8 grid with configurable dimensions
+   - Cell click/hover handlers
+   - Displays different cell states (empty, occupied, highlighted, selected)
+
+3. **Grid Occupant System**
+   - `GridOccupantRenderer.tsx` - Renders any occupant type
+   - Individual card components (Hero, Enemy, Button, Resource, etc.)
+   - Multi-cell spanning support (1 occupant can occupy multiple cells)
+
+4. **Enhanced Grid** (`EnhancedBattleGrid.tsx`)
+   - Manages occupants on the grid
+   - Click handling for both cells and occupants
+   - Occupancy tracking
+
+---
+
+## Issues to Fix
+
+### 🔴 Current Problems
+1. **Extra UI elements** - `EnhancedBattleGrid` and example `page.tsx` add non-grid UI elements
+2. **Grid background visibility** - Optional grid cells showing, should always be invisible
+3. **Non-uniform sizing** - Some occupants span multiple cells creating visual inconsistency
+
+### 🎯 What We Want Instead
+- Pure 8x8 grid (or configurable NxM)
+- Each cell = 1 visual unit
+- All content lives IN grid cells
+- Grid lines invisible or very subtle
+- Background is just gradient/particles
+
+---
+
+## Remaining Work
+
+## Phase 1: Core Grid System Polish
+
+### 1.1 Create Clean Grid Component
+**File**: `src/components/Grid/GameGrid.tsx`
+
+**Requirements**:
+```typescript
+interface GameGridProps {
+  rows: number;
+  cols: number;
+  cellSize: number;
+  occupants: AnyGridOccupant[];
+  onOccupantClick?: (occupant: AnyGridOccupant) => void;
+  onEmptyCellClick?: (position: GridPosition) => void;
+}
+```
+
+**Behavior**:
+- Render grid cells (invisible background or very subtle)
+- Render occupants on top
+- Handle clicks (distinguish between occupant clicks and empty cell clicks)
+- No external UI elements
+- Each occupant occupies exactly 1 cell (remove multi-cell spanning for MVP)
+
+### 1.2 Simplify Occupant Rendering
+**Files**: 
+- `src/components/GridOccupants/*.tsx`
+
+**Requirements**:
+- Each occupant fits perfectly in 1 cell
+- Hero/Enemy cards show: sprite, HP bar (small), name
+- Buttons show: icon + label
+- Resources show: icon + number
+- Text panels show: title + short text (truncated if needed)
+
+---
+
+## Phase 2: Game Screens (Grid-Based Only)
+
+### 2.1 Main Menu Screen
+**File**: `src/screens/MainMenu/MainMenuScreen.tsx`
+
+**Grid Layout (8x8 example)**:
+```
+[0,0] Gold    [0,1] Gems    [0,2-5] TITLE       [0,6] Level
+[1,0] Empty   [1,1] Empty   [1,2-5] Subtitle    [1,6] Empty
+[2,0-7] Empty row
+[3,2] Campaign  [3,4] Heroes
+[4,2] Shop      [4,4] Inventory  
+[5,2] Settings  [5,4] Quit
+[6,0-7] Empty row
+[7,1-6] News Banner
+```
+
+**Create**:
+- Layout function that returns `AnyGridOccupant[]`
+- Each button onClick navigates to different screen
+- All resources/info in grid cells
+
+### 2.2 Campaign Map Screen
+**File**: `src/screens/CampaignMap/CampaignMapScreen.tsx`
+
+**Grid Layout (8x8 example)**:
+```
+[0,0] Back    [0,1] Gold    [0,2] Gems    [0,6-7] Stage Info
+[1-6] Stage nodes (each stage = 1 cell)
+  - Completed stages = green checkmark
+  - Current stage = pulsing
+  - Locked stages = lock icon
+[7,3] Selected Stage Details (spans shown when stage clicked)
+```
+
+**Stage Node Data**:
+```typescript
+interface StageNode {
+  stageId: number;
+  position: GridPosition;
+  status: 'locked' | 'available' | 'completed';
+  difficulty: 'easy' | 'medium' | 'hard' | 'boss';
+}
+```
+
+**Behavior**:
+- Click stage node → Show stage info in bottom cells
+- Click "Start Battle" → Navigate to Pre-Battle screen
+
+### 2.3 Pre-Battle Screen
+**File**: `src/screens/PreBattle/PreBattleScreen.tsx`
+
+**Grid Layout (10x8 example - may need to expand grid)**:
+```
+[0,0] Back     [0,1-3] Stage Name      [0,6-7] Resources
+[1,0-3] Enemy Preview (each enemy = 1 cell)
+[2,0-3] Enemy info
+[3,0-7] Empty separator
+[4-5,0-3] Your Team Slots (empty or filled with hero cards)
+[6,0-3] Available Heroes to add
+[7,0-7] Equipment slots (1 per hero)
+[8,3] Ready Button
+```
+
+**Behavior**:
+- Click enemy cell → Show enemy details
+- Click team slot → Open hero selection
+- Click hero → Add to team slot
+- Click equipped item → Open item selection modal (or show items in grid)
+- Ready button → Start simulation + playback
+
+### 2.4 Battle Screen
+**File**: `src/screens/Battle/BattleScreen.tsx`
+
+**Grid Layout (8x8)**:
+```
+[0,0-3] Hero positions
+[0,5-7] Enemy positions
+[Rows 1-7] Battle area where units move
+```
+
+**Behavior**:
+- Show simulation playback
+- Units animate between grid cells
+- HP bars update in real-time
+- Click unit → Show detailed stats overlay (in grid cells)
+- Speed controls at bottom of grid (1x, 2x, 5x buttons)
+
+### 2.5 Hero Roster Screen
+**File**: `src/screens/HeroRoster/HeroRosterScreen.tsx`
+
+**Grid Layout**:
+```
+[0,0] Back    [0,1-3] Filter buttons    [0,6-7] Total Heroes
+[1-7] Hero cards (1 per cell, paginated)
+```
+
+**Behavior**:
+- Click hero → Navigate to hero detail screen
+- Pagination via arrow buttons in grid
+
+### 2.6 Shop Screen
+**File**: `src/screens/Shop/ShopScreen.tsx`
+
+**Grid Layout**:
+```
+[0,0] Back    [0,1] Gold    [0,2] Gems    [0,7] Refresh
+[1-6] Shop items (each item = 1 cell)
+  - Shows: icon, name, cost
+[7,3] Buy/Purchase button
+```
+
+**Behavior**:
+- Click item → Highlight + show details
+- Click Buy → Purchase if enough gold
+- Refresh → Reroll shop (costs gold)
+
+---
+
+## Phase 3: Game Systems
+
+### 3.1 Battle Simulation
+**File**: `src/systems/BattleSimulator.ts`
+
+**Requirements**:
+- Already implemented (TypeScript version exists)
+- Input: Hero team, Enemy team
+- Output: `BattleRecording` with all events timestamped
+- No changes needed
+
+### 3.2 Battle Playback
+**File**: `src/systems/BattlePlayback.ts`
+
+**Requirements**:
+- Take `BattleRecording`
+- Play back on grid with GSAP animations
+- Units move between grid cells
+- Show damage numbers, effects
+- Support speed controls (0.5x, 1x, 2x, 5x)
+
+**Integration with Grid**:
+- Units rendered as `GridHero` / `GridEnemy`
+- Update `position` property on each animation frame
+- Grid re-renders to show new positions
+
+### 3.3 Progression System
+**File**: `src/systems/ProgressionSystem.ts`
+
+**State Management**:
+```typescript
+interface GameState {
+  player: {
+    gold: number;
+    gems: number;
+    level: number;
+    experience: number;
+  };
+  roster: Hero[];
+  inventory: Item[];
+  campaign: {
+    currentStage: number;
+    maxStageReached: number;
+    stagesCompleted: Set<number>;
+  };
+  unlockedFeatures: Set<string>;
+}
+```
+
+**Functions**:
+- `completeStage(stageId)` → Award gold, XP, check for hero recruit
+- `recruitHero(hero)` → Add to roster
+- `purchaseItem(item)` → Deduct gold, add to inventory
+- `equipItem(heroId, itemId)` → Attach item to hero
+- Save/load state to localStorage
+
+### 3.4 Slot Progression
+**File**: `src/systems/SlotProgression.ts`
+
+Already designed - see previous conversation:
+```typescript
+getSlotsForStage(stageId: number): { playerSlots: number, enemySlots: number }
+```
+
+**Integration**:
+- Stage 1-2: 1v1
+- Stage 3-4: 2v2
+- Stage 5: 2v3 (boss)
+- Stage 6-10: 3v3, 3v4, 3v5
+- Stage 11+: 4v4, 5v5, etc.
+
+---
+
+## Phase 4: Polish & Content
+
+### 4.1 Sprite Assets Needed
+Create placeholder sprite system until real assets arrive:
+
+**Files**: `src/utils/generatePlaceholder.ts`
+```typescript
+generateHeroSprite(heroClass: string): string  // Returns data URL
+generateEnemySprite(enemyType: string): string
+generateItemIcon(itemId: string): string
+generateButtonIcon(type: string): string
+```
+
+**Sprites Needed** (eventually):
+- Heroes: Blood Knight, Shadow Stalker, Plague Doctor, Necromancer, Witch Hunter, Flesh Golem
+- Enemies: Wraith, Slime, Gargoyle, Rat Swarm, Bone Construct, Cultist
+- Items: Swords, armor, accessories, potions
+- UI: Gold icon, gem icon, buttons, decorations
+
+### 4.2 Hero/Enemy Data
+**File**: `src/data/units.ts`
+
+Define all hero and enemy templates:
+```typescript
+export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
+  blood_knight: {
+    class: 'Blood Knight',
+    baseStats: { hp: 200, speed: 100, damage: 50, ... },
+    abilities: { offensive: {...}, support: {...} },
+    spritePath: '/sprites/blood_knight.png'
+  },
+  // ... all other heroes
+}
+
+export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
+  // ... all enemies
+}
+```
+
+### 4.3 Item Data
+**File**: `src/data/items.ts`
+
+Define all items with effects:
+```typescript
+export const ITEM_TEMPLATES: Record<string, Item> = {
+  rusty_sword: {
+    id: 'rusty_sword',
+    name: 'Rusty Sword',
+    rarity: Rarity.Common,
+    effects: [{ stat: 'damage', type: 'multiply', value: 1.2 }]
+  },
+  // ... all other items
+}
+```
+
+### 4.4 Stage Data
+**File**: `src/data/stages.ts`
+
+Define all campaign stages:
+```typescript
+export const CAMPAIGN_STAGES: Stage[] = [
+  {
+    id: 1,
+    name: 'Dark Woods',
+    difficulty: Difficulty.Tutorial,
+    enemies: ['plague_rat', 'plague_rat'],
+    rewards: { gold: 50, recruitChance: 0.3 }
+  },
+  // ... all 20+ stages
+]
+```
+
+---
+
+## Phase 5: Additional Features (Post-MVP)
+
+### 5.1 Recruitment System
+- Post-battle: Show 3 hero options in grid cells
+- Click to recruit
+- Option to skip
+
+### 5.2 Item Shop
+- Refresh mechanics
+- Different item rarities
+- Purchase with gold/gems
+
+### 5.3 Hero Upgrades
+- Level up system
+- Stat increases
+- Ability unlocks
+
+### 5.4 Replay System
+- Save battle recordings
+- Share codes
+- Watch replays at different speeds
+
+### 5.5 Settings Screen
+- Audio toggle
+- Animation speed defaults
+- Reset progress
+
+---
+
+## Technical Architecture
+
+### Recommended File Structure
+```
+src/
+├── app/
+│   ├── page.tsx                 # Root - shows current screen
+│   └── globals.css
+├── components/
+│   ├── Grid/
+│   │   ├── GameGrid.tsx         # Main grid component
+│   │   └── GameGrid.css
+│   └── GridOccupants/
+│       ├── GridHeroCard.tsx
+│       ├── GridEnemyCard.tsx
+│       ├── GridButtonCard.tsx
+│       ├── GridResourceCard.tsx
+│       ├── GridStatusPanelCard.tsx
+│       ├── GridDecorationCard.tsx
+│       ├── GridOccupantRenderer.tsx
+│       └── GridOccupants.css
+├── screens/
+│   ├── MainMenu/
+│   │   ├── MainMenuScreen.tsx
+│   │   └── MainMenuLayout.ts
+│   ├── CampaignMap/
+│   │   ├── CampaignMapScreen.tsx
+│   │   └── CampaignMapLayout.ts
+│   ├── PreBattle/
+│   │   ├── PreBattleScreen.tsx
+│   │   └── PreBattleLayout.ts
+│   ├── Battle/
+│   │   ├── BattleScreen.tsx
+│   │   └── BattleLayout.ts
+│   ├── HeroRoster/
+│   │   └── HeroRosterScreen.tsx
+│   └── Shop/
+│       └── ShopScreen.tsx
+├── systems/
+│   ├── BattleSimulator.ts
+│   ├── BattlePlayback.ts
+│   ├── ProgressionSystem.ts
+│   ├── SlotProgression.ts
+│   ├── ItemManager.ts
+│   └── RecruitmentSystem.ts
+├── data/
+│   ├── units.ts                 # Hero/enemy templates
+│   ├── items.ts                 # Item definitions
+│   └── stages.ts                # Campaign stages
+├── types/
+│   ├── grid.types.ts            # Grid & occupant types
+│   ├── core.types.ts            # Unit, item, ability types
+│   ├── battle.types.ts          # Battle event types
+│   └── progression.types.ts     # Stage, reward types
+└── utils/
+    ├── gridLayoutManager.ts
+    └── generatePlaceholder.ts   # Temp sprite generation
+```
+
+### State Management
+Use React Context or Zustand:
+
+```typescript
+interface GameContext {
+  currentScreen: ScreenType;
+  gameState: GameState;
+  navigate: (screen: ScreenType) => void;
+  updateGameState: (updates: Partial<GameState>) => void;
+}
+```
+
+### Dependencies
+```json
+{
+  "dependencies": {
+    "react": "^18.x",
+    "typescript": "^5.x",
+    "pixi.js": "^7.x",     // For advanced rendering (optional)
+    "gsap": "^3.x",        // For animations
+    "zustand": "^4.x"      // State management (optional)
+  }
+}
+```
+
+---
+
+## Development Priorities
+
+### Week 1: Core Grid System
+1. Fix `GameGrid.tsx` - clean, minimalist, no extra UI
+2. Polish all occupant card components
+3. Test click handling, hover states
+4. Ensure uniform cell sizing
+
+### Week 2: Main Screens
+1. Main Menu screen
+2. Campaign Map screen
+3. Pre-Battle screen
+4. Navigation between screens
+
+### Week 3: Battle System
+1. Battle simulation (already done in TS)
+2. Battle playback with GSAP
+3. Unit movement animations
+4. Victory/defeat handling
+
+### Week 4: Progression & Content
+1. Progression system
+2. Hero/enemy data
+3. Item system
+4. Save/load
+
+### Week 5: Polish
+1. Sprite assets (placeholders → real)
+2. Sound effects
+3. Particle effects
+4. Bug fixes
+
+---
+
+## Key Design Principles
+
+1. **Grid Purity**: If it's not in a grid cell, it doesn't exist
+2. **Readability**: Each cell should be instantly recognizable
+3. **Consistency**: Same cell size throughout entire game
+4. **Interactivity**: Every occupied cell should respond to clicks
+5. **Performance**: 60fps even with 64 cells + animations
+6. **Scalability**: Easy to add new occupant types
+
+---
+
+## Questions for Dev to Answer
+
+1. **Grid size**: Stick with 8x8 or allow variable (10x8, 12x8)?
+2. **Multi-cell spanning**: Allow or force 1 cell per occupant?
+3. **Animation complexity**: Simple tweens or complex particle effects?
+4. **Responsive**: How to handle mobile/different screen sizes?
+5. **Save system**: LocalStorage or backend?
+6. **Asset format**: PNG sprites or sprite sheets?
+
+---
+
+## Success Criteria
+
+✅ **MVP Complete When**:
+- Main menu functional
+- Can navigate through campaign stages
+- Pre-battle setup works (select team, equipment)
+- Battle simulation + playback works
+- Hero recruitment works
+- Basic progression (gold, stage unlocks) works
+- All UI is grid-based (no external elements)
+- Can complete stages 1-10
+
+---
+
+## Notes
+
+- Prioritize functionality over visuals initially
+- Use placeholder sprites (emojis, colored squares) until assets ready
+- Keep all layouts in separate `*Layout.ts` files for easy tweaking
+- TypeScript strict mode - no `any` types
+- Every screen should return to main menu via Back button
+- Test on 8x8 grid first, expand if needed
