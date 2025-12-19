@@ -11,6 +11,7 @@ import { createHeroRosterLayout } from '@/screens/HeroRoster/HeroRosterLayout';
 import { createHeroInstance, createEnemyInstance } from '@/data/units';
 import { getStageById } from '@/data/stages';
 import { BattleSimulator, BattleState } from '@/systems/BattleSimulator';
+import { audioManager } from '@/utils/audioManager';
 
 interface GameStore extends GameState {
   // Grid management
@@ -161,7 +162,8 @@ export const useGameStore = create<GameStore>()(
               state.navigate,
               state.addHeroToPreBattle,
               state.removeHeroFromPreBattle,
-              state.startBattle
+              state.startBattle,
+              state.setPreBattleTeam
             );
           }
         } else if (screen === ScreenType.Battle && state.currentBattle) {
@@ -330,12 +332,44 @@ export const useGameStore = create<GameStore>()(
       setBattleSpeed: (speed: number) => set({ battleSpeed: speed }),
 
       // Pre-Battle team management
-      setPreBattleTeam: (heroIds: string[]) =>
-        set({ preBattleTeam: heroIds }),
+      setPreBattleTeam: (heroIds: string[]) => {
+        const state = get();
+        set({ preBattleTeam: heroIds });
+
+        // Regenerate Pre-Battle layout with new team
+        if (state.currentScreen === ScreenType.PreBattle && state.selectedStageId) {
+          const stage = getStageById(state.selectedStageId);
+          if (stage) {
+            // Temporarily disable card animations for smooth update
+            (window as any).__disableCardAnimations = true;
+
+            const newOccupants = createPreBattleLayout(
+              stage,
+              state.player.gold,
+              state.player.gems,
+              heroIds,
+              state.roster,
+              state.navigate,
+              state.addHeroToPreBattle,
+              state.removeHeroFromPreBattle,
+              state.startBattle,
+              state.setPreBattleTeam
+            );
+            set({ gridOccupants: newOccupants });
+
+            // Re-enable animations after a brief delay
+            setTimeout(() => {
+              (window as any).__disableCardAnimations = false;
+            }, 50);
+          }
+        }
+      },
 
       addHeroToPreBattle: (heroId: string) => {
         const state = get();
-        if (state.preBattleTeam.includes(heroId)) {
+        // Check if hero is already in team (ignoring empty slots)
+        const filledSlots = state.preBattleTeam.filter(id => id && id !== '');
+        if (filledSlots.includes(heroId)) {
           return;
         }
 
@@ -346,6 +380,9 @@ export const useGameStore = create<GameStore>()(
         if (state.currentScreen === ScreenType.PreBattle && state.selectedStageId) {
           const stage = getStageById(state.selectedStageId);
           if (stage) {
+            // Temporarily disable card animations for smooth update
+            (window as any).__disableCardAnimations = true;
+
             const newOccupants = createPreBattleLayout(
               stage,
               state.player.gold,
@@ -355,9 +392,15 @@ export const useGameStore = create<GameStore>()(
               state.navigate,
               state.addHeroToPreBattle,
               state.removeHeroFromPreBattle,
-              state.startBattle
+              state.startBattle,
+              state.setPreBattleTeam
             );
             set({ gridOccupants: newOccupants });
+
+            // Re-enable animations after a brief delay
+            setTimeout(() => {
+              (window as any).__disableCardAnimations = false;
+            }, 50);
           }
         }
       },
@@ -371,6 +414,9 @@ export const useGameStore = create<GameStore>()(
         if (state.currentScreen === ScreenType.PreBattle && state.selectedStageId) {
           const stage = getStageById(state.selectedStageId);
           if (stage) {
+            // Temporarily disable card animations for smooth update
+            (window as any).__disableCardAnimations = true;
+
             const newOccupants = createPreBattleLayout(
               stage,
               state.player.gold,
@@ -380,9 +426,15 @@ export const useGameStore = create<GameStore>()(
               state.navigate,
               state.addHeroToPreBattle,
               state.removeHeroFromPreBattle,
-              state.startBattle
+              state.startBattle,
+              state.setPreBattleTeam
             );
             set({ gridOccupants: newOccupants });
+
+            // Re-enable animations after a brief delay
+            setTimeout(() => {
+              (window as any).__disableCardAnimations = false;
+            }, 50);
           }
         }
       },
@@ -441,14 +493,21 @@ export const useGameStore = create<GameStore>()(
           enemy.cooldown = 0; // Reset cooldown to 0
         });
 
+        // Switch to battle music
+        audioManager.playMusic('/Goblins_Dance_(Battle).wav', true, 0.5);
+
         // Set battle state and navigate to battle screen
         set({
           currentBattle: battleState,
           battleEventIndex: 0,
         });
 
-        // Navigate to battle screen
-        state.navigate(ScreenType.Battle);
+        // Navigate to battle screen with transition
+        if ((window as any).__gridNavigate) {
+          (window as any).__gridNavigate(ScreenType.Battle);
+        } else {
+          state.navigate(ScreenType.Battle);
+        }
       },
 
       advanceBattleEvent: () => {
@@ -521,6 +580,9 @@ export const useGameStore = create<GameStore>()(
               state.completeStage(state.selectedStageId);
             }
           }
+
+          // Switch back to main menu music
+          audioManager.playMusic('/Goblins_Den_(Regular).wav', true, 0.5);
 
           // Navigate back to campaign map with transition
           set({

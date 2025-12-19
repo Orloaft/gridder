@@ -16,11 +16,65 @@ export function GridHeroCard({ hero, cellSize }: GridHeroCardProps) {
 
   // Entrance animation with optional delay (skip during grid transitions)
   useEffect(() => {
-    if (cardRef.current && !(window as any).__disableCardAnimations) {
-      const delay = hero.animationDelay || 0;
-      animateCardEntrance(cardRef.current, delay);
+    if (cardRef.current) {
+      const isGridTransition = (window as any).__isGridTransition;
+      const disableCardAnimations = (window as any).__disableCardAnimations;
+
+      if (isGridTransition) {
+        // During grid transitions, keep card hidden - animateGridEntrance will show it
+        return;
+      } else if (disableCardAnimations) {
+        // During drag-and-drop updates, show card immediately without animation
+        cardRef.current.style.opacity = '1';
+        cardRef.current.style.transform = 'scale(1)';
+      } else {
+        // Normal entrance animation
+        const delay = hero.animationDelay || 0;
+        animateCardEntrance(cardRef.current, delay);
+      }
     }
   }, [hero.animationDelay]);
+
+  // Drag-and-drop handlers
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!hero.draggable) return;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('heroId', hero.heroInstanceId || '');
+    if (hero.onDragStart) {
+      hero.onDragStart();
+    }
+    // Add dragging visual feedback
+    if (cardRef.current) {
+      cardRef.current.style.opacity = '0.5';
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    // Reset visual feedback
+    if (cardRef.current) {
+      cardRef.current.style.opacity = '1';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!hero.draggable && !hero.onDrop) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const droppedHeroId = e.dataTransfer.getData('heroId');
+    if (droppedHeroId && hero.onDrop) {
+      hero.onDrop(droppedHeroId);
+    }
+  };
+
+  const handleClick = () => {
+    if (hero.onClick) {
+      hero.onClick();
+    }
+  };
 
   return (
     <div
@@ -28,7 +82,13 @@ export function GridHeroCard({ hero, cellSize }: GridHeroCardProps) {
       data-grid-card
       data-unit-id={hero.unitId}
       data-unit-type="hero"
-      className="relative w-full h-full bg-gradient-to-br from-blue-900 to-blue-700 border-2 border-blue-400 rounded-lg overflow-hidden hover:border-blue-300 transition-all shadow-lg hover:shadow-blue-500/50"
+      draggable={hero.draggable}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onClick={handleClick}
+      className={`relative w-full h-full bg-gradient-to-br from-blue-900 to-blue-700 border-2 border-blue-400 rounded-lg overflow-hidden hover:border-blue-300 transition-all shadow-lg hover:shadow-blue-500/50 ${hero.draggable ? 'cursor-move' : ''} ${hero.onClick ? 'cursor-pointer' : ''}`}
       style={{ opacity: 0, transform: 'scale(0)', fontSize: cellSize * 0.12 }}
     >
       {/* Hero sprite placeholder */}

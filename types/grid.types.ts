@@ -35,6 +35,12 @@ export interface GridHero extends BaseGridOccupant {
   unitId?: string; // For battle animations
   cooldown?: number; // Current cooldown (0-100)
   cooldownRate?: number; // How fast cooldown fills
+  // Drag-and-drop support
+  draggable?: boolean;
+  heroInstanceId?: string;
+  onDragStart?: () => void;
+  onDrop?: (heroId: string) => void;
+  onClick?: () => void;
 }
 
 // Enemy occupant
@@ -58,6 +64,7 @@ export interface GridButton extends BaseGridOccupant {
   onClick: () => void;
   variant?: 'primary' | 'secondary' | 'danger';
   disabled?: boolean;
+  onDrop?: (heroId: string) => void; // For drag-and-drop support
 }
 
 // Menu item occupant

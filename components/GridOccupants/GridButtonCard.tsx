@@ -30,9 +30,22 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
 
   // Entrance animation with optional delay (skip during grid transitions)
   useEffect(() => {
-    if (buttonRef.current && !(window as any).__disableCardAnimations) {
-      const delay = button.animationDelay || 0;
-      animateCardEntrance(buttonRef.current, delay);
+    if (buttonRef.current) {
+      const isGridTransition = (window as any).__isGridTransition;
+      const disableCardAnimations = (window as any).__disableCardAnimations;
+
+      if (isGridTransition) {
+        // During grid transitions, keep button hidden - animateGridEntrance will show it
+        return;
+      } else if (disableCardAnimations) {
+        // During drag-and-drop updates, show button immediately without animation
+        buttonRef.current.style.opacity = '1';
+        buttonRef.current.style.transform = 'scale(1)';
+      } else {
+        // Normal entrance animation
+        const delay = button.animationDelay || 0;
+        animateCardEntrance(buttonRef.current, delay);
+      }
     }
   }, [button.animationDelay]);
 
@@ -55,6 +68,21 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
     }
   };
 
+  // Drag-and-drop handlers for drop zones
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!button.onDrop) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const droppedHeroId = e.dataTransfer.getData('heroId');
+    if (droppedHeroId && button.onDrop) {
+      button.onDrop(droppedHeroId);
+    }
+  };
+
   return (
     <button
       ref={buttonRef}
@@ -62,6 +90,8 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
       disabled={button.disabled}
       className={`relative w-full h-full bg-gradient-to-br ${baseStyles} border-2 rounded-lg overflow-hidden shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
       style={{ opacity: 0, transform: 'scale(0)' }}

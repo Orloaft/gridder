@@ -103,8 +103,8 @@ export function animateGridTransition(
     onComplete,
   });
 
-  // Disable individual card animations during transition
-  (window as any).__disableCardAnimations = true;
+  // Mark that we're in a grid transition (cards should stay hidden until animateGridEntrance runs)
+  (window as any).__isGridTransition = true;
 
   // Step 1: Exit animation
   const exitTl = animateGridExit(gridElement);
@@ -122,8 +122,8 @@ export function animateGridTransition(
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const entranceTl = animateGridEntrance(gridElement, () => {
-            // Re-enable individual card animations after transition
-            (window as any).__disableCardAnimations = false;
+            // Clear grid transition flag after entrance completes
+            (window as any).__isGridTransition = false;
           });
           // Don't need to add to master timeline since it runs independently
         });

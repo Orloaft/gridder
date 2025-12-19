@@ -4,8 +4,9 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
 import { GameGrid } from '@/components/Grid/GameGrid';
-import { animateScreenFadeIn } from '@/animations/screenAnimations';
-import { animateGridTransition } from '@/animations/gridTransitions';
+import { LoadingBar } from '@/components/LoadingBar';
+import { animateGridTransition, animateGridEntrance } from '@/animations/gridTransitions';
+import { audioManager } from '@/utils/audioManager';
 import { getStageById } from '@/data/stages';
 import { useBattleAutoAdvance } from '@/hooks/useBattleAutoAdvance';
 import { useBattleAnimations } from '@/hooks/useBattleAnimations';
@@ -15,6 +16,8 @@ export default function Home() {
   const gridRef = useRef<HTMLDivElement>(null);
   const isTransitioning = useRef(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
 
   // Auto-advance battle events (200ms base for tick-based combat)
   useBattleAutoAdvance(200);
@@ -31,14 +34,36 @@ export default function Home() {
     campaign,
   } = useGameStore();
 
-  // Initialize grid on mount with fade in
+  // Initialize grid immediately on mount (before loading)
   useEffect(() => {
+    // Mark as grid transition during initial load (cards should stay hidden)
+    (window as any).__isGridTransition = true;
     navigate(ScreenType.MainMenu);
+  }, [navigate]);
 
-    // Initial screen fade in
-    if (screenRef.current) {
-      animateScreenFadeIn(screenRef.current);
-    }
+  // Handle loading completion
+  const handleLoadingComplete = useCallback(() => {
+    setIsLoading(false);
+
+    // Start main menu music
+    audioManager.playMusic('/Goblins_Den_(Regular).wav', true, 1);
+
+    // Small delay before showing grid to ensure smooth transition
+    setTimeout(() => {
+      setShowGrid(true);
+
+      // Wait for React to render the cards, then trigger grid entrance animation
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (gridRef.current) {
+            animateGridEntrance(gridRef.current, () => {
+              // Clear grid transition flag after initial entrance
+              (window as any).__isGridTransition = false;
+            });
+          }
+        });
+      });
+    }, 50);
   }, []);
 
   // Expose a transition-aware navigate function
@@ -114,16 +139,26 @@ export default function Home() {
 
   return (
     <>
+      {/* Main Game - always rendered, background always visible */}
       <div
         ref={screenRef}
         className={`min-h-screen ${getBackgroundClass()} flex flex-col items-center justify-center p-8 gap-8 transition-colors duration-700`}
       >
         {/* Single Persistent Grid - everything happens here */}
-        <GameGrid ref={gridRef} rows={8} cols={8} cellSize={100} occupants={gridOccupants} />
+        {/* Grid background is always visible, but tiles are hidden until loading completes */}
+        <div style={{ opacity: showGrid ? 1 : 1 }}>
+          <GameGrid ref={gridRef} rows={8} cols={8} cellSize={100} occupants={showGrid ? gridOccupants : []} />
+        </div>
       </div>
 
+      {/* Loading Bar - overlays on top of grid and background */}
+      {isLoading && (
+        <LoadingBar onComplete={handleLoadingComplete} duration={2} />
+      )}
+
       {/* Fullscreen button in bottom left corner - outside animated container */}
-      <button
+      {showGrid && (
+        <button
         onClick={toggleFullscreen}
         className="fixed w-12 h-12 bg-gray-800 hover:bg-gray-700 border-2 border-gray-500 rounded-lg flex items-center justify-center transition-all hover:scale-110 shadow-lg"
         style={{
@@ -165,6 +200,7 @@ export default function Home() {
           </svg>
         )}
       </button>
+      )}
     </>
   );
 }

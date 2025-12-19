@@ -14,7 +14,8 @@ export function createPreBattleLayout(
   _navigate: (screen: ScreenType) => void,
   onHeroSelect: (heroId: string) => void,
   onHeroRemove: (heroId: string) => void,
-  onReady: () => void
+  onReady: () => void,
+  onSetTeam?: (team: string[]) => void
 ): AnyGridOccupant[] {
   // Use the global transition-aware navigate function
   const navigate = (screen: ScreenType) => {
@@ -98,22 +99,23 @@ export function createPreBattleLayout(
   });
 
   // Row 4: Team Label
+  const filledSlots = preBattleTeam.filter(id => id && id !== '').length;
   occupants.push({
     id: 'team-label',
     type: GridOccupantType.Decoration,
     position: { row: 4, col: 0 },
-    text: `Your Team (${preBattleTeam.length}/${stage.playerSlots})`,
+    text: `Your Team (${filledSlots}/${stage.playerSlots})`,
     style: 'subtitle',
     animationDelay: 0.5,
   });
 
-  // Row 5: Team slots (empty or filled)
+  // Row 5: Team slots (empty or filled) - now with drag-and-drop
   for (let i = 0; i < stage.playerSlots; i++) {
     const heroId = preBattleTeam[i];
-    const hero = availableHeroes.find((h) => h.instanceId === heroId);
+    const hero = heroId ? availableHeroes.find((h) => h.instanceId === heroId) : undefined;
 
-    if (hero) {
-      // Show hero card
+    if (hero && heroId) {
+      // Show hero card (draggable)
       occupants.push({
         id: `team-slot-${i}`,
         type: GridOccupantType.Hero,
@@ -122,32 +124,78 @@ export function createPreBattleLayout(
         spritePath: hero.spritePath,
         hp: hero.currentStats.hp,
         maxHp: hero.currentStats.maxHp,
+        level: hero.level,
+        heroClass: hero.class,
         animationDelay: 0.55 + i * 0.05,
-      });
+        // Drag-and-drop support
+        draggable: true,
+        heroInstanceId: heroId,
+        onDragStart: () => {
+          // Store which hero is being dragged
+          (window as any).__draggedHeroId = heroId;
+          (window as any).__draggedFromTeam = true;
+        },
+        onDrop: (droppedHeroId: string) => {
+          if (!onSetTeam) return;
 
-      // Add small remove button overlay (using decoration)
-      occupants.push({
-        id: `remove-hero-${i}`,
-        type: GridOccupantType.Button,
-        position: { row: 5, col: i + stage.playerSlots },
-        label: 'Remove',
-        icon: '✖',
-        variant: 'danger',
-        onClick: () => onHeroRemove(heroId),
-        animationDelay: 0.6 + i * 0.05,
+          // Get whether dragged from team or roster
+          const draggedFromTeam = (window as any).__draggedFromTeam;
+          // Ensure team array is big enough to hold all slots
+          const newTeam = Array(stage.playerSlots).fill('').map((_, idx) => preBattleTeam[idx] || '');
+
+          if (draggedFromTeam) {
+            // Swapping/rearranging within team
+            const draggedIndex = newTeam.indexOf(droppedHeroId);
+            if (draggedIndex !== -1 && draggedIndex !== i) {
+              // Swap the two heroes
+              [newTeam[i], newTeam[draggedIndex]] = [newTeam[draggedIndex], newTeam[i]];
+              onSetTeam(newTeam);
+            }
+          } else {
+            // Replacing hero from roster - remove old hero and add new one
+            newTeam[i] = droppedHeroId;
+            // The old hero goes back to the available pool (no need to track it)
+            onSetTeam(newTeam);
+          }
+        },
       });
     } else {
-      // Show empty slot
+      // Show empty slot (drop target)
+      const slotIndex = i;
       occupants.push({
         id: `team-slot-${i}`,
         type: GridOccupantType.Button,
         position: { row: 5, col: i },
-        label: 'Empty',
+        label: 'Drop Here',
         icon: '➕',
         variant: 'secondary',
-        disabled: true,
+        disabled: false,
         onClick: () => {},
         animationDelay: 0.55 + i * 0.05,
+        // Drop target - insert at specific position
+        onDrop: (heroId: string) => {
+          if (!onSetTeam) {
+            // Fallback to old behavior
+            onHeroSelect(heroId);
+            return;
+          }
+
+          const draggedFromTeam = (window as any).__draggedFromTeam;
+          // Ensure team array is big enough to hold all slots
+          const newTeam = Array(stage.playerSlots).fill('').map((_, idx) => preBattleTeam[idx] || '');
+
+          if (draggedFromTeam) {
+            // Moving within team - remove from old position
+            const oldIndex = newTeam.indexOf(heroId);
+            if (oldIndex !== -1) {
+              newTeam[oldIndex] = '';
+            }
+          }
+
+          // Insert at this specific position
+          newTeam[slotIndex] = heroId;
+          onSetTeam(newTeam);
+        },
       });
     }
   }
@@ -162,26 +210,38 @@ export function createPreBattleLayout(
     animationDelay: 0.7,
   });
 
-  // Row 7: Available heroes to add
-  availableHeroes
-    .filter((h) => !preBattleTeam.includes(h.instanceId))
+  // Row 7: Available heroes to add (draggable)
+  const filledTeamSlots = preBattleTeam.filter(id => id && id !== '');
+  const availableToAdd = availableHeroes.filter((h) => !filledTeamSlots.includes(h.instanceId));
+
+  availableToAdd
     .slice(0, 8) // Show up to 8 heroes
     .forEach((hero, index) => {
       occupants.push({
         id: `available-hero-${hero.instanceId}`,
-        type: GridOccupantType.Button,
+        type: GridOccupantType.Hero,
         position: { row: 7, col: index },
-        label: hero.class,
-        icon: hero.spritePath,
-        variant: 'primary',
-        disabled: preBattleTeam.length >= stage.playerSlots,
-        onClick: () => onHeroSelect(hero.instanceId),
+        name: hero.name,
+        spritePath: hero.spritePath,
+        hp: hero.currentStats.hp,
+        maxHp: hero.currentStats.maxHp,
+        level: hero.level,
+        heroClass: hero.class,
         animationDelay: 0.75 + index * 0.05,
+        // Drag-and-drop support
+        draggable: true,
+        heroInstanceId: hero.instanceId,
+        onDragStart: () => {
+          (window as any).__draggedHeroId = hero.instanceId;
+          (window as any).__draggedFromTeam = false;
+        },
+        // Double-click to add (alternative to drag)
+        onClick: filledSlots < stage.playerSlots ? () => onHeroSelect(hero.instanceId) : undefined,
       });
     });
 
   // Ready button (if team is valid) - Row 6, col 7 (top right area)
-  if (preBattleTeam.length > 0) {
+  if (filledSlots > 0) {
     occupants.push({
       id: 'btn-ready',
       type: GridOccupantType.Button,

@@ -8,8 +8,10 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   overflow: hidden;
+  background-color: #0f0f1a; /* Dark background to prevent white flash */
 }
 
 /* Pixelated rendering for pixel art icons */
@@ -67,4 +69,18 @@ body {
   text-shadow: 0 0 8px rgba(255, 87, 34, 0.8),
                0 2px 4px rgba(0, 0, 0, 0.8);
   font-weight: 900;
+}
+
+/* Loading bar shimmer animation */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
 }
