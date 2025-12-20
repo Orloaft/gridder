@@ -12,16 +12,17 @@ interface UnitInfoPanelProps {
   hoveredItem: ItemInstance | null;
   roster: Hero[];
   inventory: ItemInstance[];
+  width?: number; // Optional width for responsive layouts
 }
 
-export function UnitInfoPanel({ unit, hoveredItem, roster, inventory }: UnitInfoPanelProps) {
+export function UnitInfoPanel({ unit, hoveredItem, roster, inventory, width = 320 }: UnitInfoPanelProps) {
   // If hovering over an item, show item details
   if (hoveredItem) {
-    return <ItemInfoDisplay item={hoveredItem} />;
+    return <ItemInfoDisplay item={hoveredItem} width={width} />;
   }
   if (!unit) {
     return (
-      <div className="w-80 h-full bg-gradient-to-br from-gray-900/90 to-gray-800/90 border-2 border-gray-700 rounded-lg p-6 flex items-center justify-center">
+      <div className="h-full bg-gradient-to-br from-gray-900/90 to-gray-800/90 border-2 border-gray-700 rounded-lg p-6 flex items-center justify-center" style={{ width }}>
         <p className="text-gray-500 text-center">
           Hover over a unit to see its details
         </p>
@@ -65,11 +66,11 @@ export function UnitInfoPanel({ unit, hoveredItem, roster, inventory }: UnitInfo
   }
 
   return (
-    <div className={`w-80 h-full bg-gradient-to-br ${
+    <div className={`h-full bg-gradient-to-br ${
       isHero
         ? 'from-blue-900/90 to-blue-800/90 border-blue-400'
         : 'from-red-900/90 to-red-800/90 border-red-400'
-    } border-2 rounded-lg p-6 overflow-y-auto`}>
+    } border-2 rounded-lg p-6 overflow-y-auto`} style={{ width }}>
       {/* Unit Header */}
       <div className="flex items-center gap-4 mb-4">
         {/* Sprite */}
@@ -305,11 +306,11 @@ function getRarityBorderColor(rarity: string) {
   }
 }
 
-function ItemInfoDisplay({ item }: { item: ItemInstance }) {
+function ItemInfoDisplay({ item, width = 320 }: { item: ItemInstance; width?: number }) {
   const isImageSprite = item.spritePath?.startsWith('/icons/');
 
   return (
-    <div className={`w-80 h-full bg-gradient-to-br from-gray-900/90 to-gray-800/90 border-2 ${getRarityBorderColor(item.rarity)} rounded-lg p-6 overflow-y-auto`}>
+    <div className={`h-full bg-gradient-to-br from-gray-900/90 to-gray-800/90 border-2 ${getRarityBorderColor(item.rarity)} rounded-lg p-6 overflow-y-auto`} style={{ width }}>
       {/* Item Header */}
       <div className="flex items-center gap-4 mb-4">
         {/* Icon */}

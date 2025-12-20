@@ -2,6 +2,16 @@ import gsap from 'gsap';
 import { GridPosition } from '@/types/grid.types';
 
 /**
+ * Clamp grid position to valid bounds (0-7)
+ */
+function clampGridPosition(position: GridPosition): GridPosition {
+  return {
+    row: Math.max(0, Math.min(7, position.row)),
+    col: Math.max(0, Math.min(7, position.col)),
+  };
+}
+
+/**
  * Animates a tile sliding from one grid position to another
  * @param element - The DOM element to animate
  * @param fromPosition - Starting grid position
@@ -18,10 +28,14 @@ export function animateTileSlide(
   duration: number = 0.5,
   onComplete?: () => void
 ): void {
-  const fromX = fromPosition.col * cellSize;
-  const fromY = fromPosition.row * cellSize;
-  const toX = toPosition.col * cellSize;
-  const toY = toPosition.row * cellSize;
+  // Clamp positions to ensure they're within grid bounds (0-7)
+  const clampedFrom = clampGridPosition(fromPosition);
+  const clampedTo = clampGridPosition(toPosition);
+
+  const fromX = clampedFrom.col * cellSize;
+  const fromY = clampedFrom.row * cellSize;
+  const toX = clampedTo.col * cellSize;
+  const toY = clampedTo.row * cellSize;
 
   gsap.fromTo(
     element,

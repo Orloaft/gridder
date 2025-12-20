@@ -31,8 +31,42 @@ export const ICON_PATHS = {
   star: '/icons/star.PNG',
   skull: '/icons/skull.PNG',
 
-  // Character
+  // Heroes
   quester: '/icons/quester.PNG',
+  paladin: '/icons/paladin.PNG',
+  necromancer: '/icons/necromancer.PNG',
+  weakWizard: '/icons/weakwizard.PNG',
+  arcanerogue: '/icons/arcanerogue.PNG',
+  arcaneHalberdman: '/icons/arcanehalberdman.PNG',
+  armourSwordman: '/icons/armourswordman.PNG',
+  axeHandHornman: '/icons/axehandhornman.PNG',
+  bloodyAxeman: '/icons/bloodyaxeman.PNG',
+  bloodyKnifeman: '/icons/bloodyknifeman.PNG',
+  darkKnifeman: '/icons/darkknifeman.PNG',
+  darkman: '/icons/darkman.PNG',
+  halberdman: '/icons/halberdman.PNG',
+  shieldman: '/icons/shieldman.PNG',
+  staffCloakman: '/icons/staffcloakman.PNG',
+  swordman: '/icons/swordman.PNG',
+  torchman: '/icons/torchman.PNG',
+
+  // Enemies
+  bat: '/icons/bat.PNG',
+  blackHulk: '/icons/blackhulk.PNG',
+  bluebottle: '/icons/bluebottle.PNG',
+  centipede: '/icons/centipede.PNG',
+  chimera: '/icons/chimera.PNG',
+  hobgob: '/icons/hobgob.PNG',
+  hoodZombie: '/icons/hoodzombie.PNG',
+  maggot: '/icons/maggot.PNG',
+  mermaiden: '/icons/mermaiden.PNG',
+  plagueRat: '/icons/plague_rat.PNG',
+  skinnyZombie: '/icons/skinnyzombie.PNG',
+  spider: '/icons/spider.PNG',
+  spiderHatchling: '/icons/spider_hatchling.PNG',
+  spiderRat: '/icons/spider_rat.PNG',
+  strongZombie: '/icons/strongombie.PNG',
+  succubus: '/icons/succubus.PNG',
 } as const;
 
 export type IconKey = keyof typeof ICON_PATHS;
@@ -49,5 +83,6 @@ export const ICON_CATEGORIES = {
   consumables: ['blueBottle', 'greenBottle', 'heart'] as IconKey[],
   resources: ['coin', 'orb', 'sack', 'star'] as IconKey[],
   ui: ['checkmark', 'cog', 'compass', 'crown', 'key', 'lock', 'map', 'openScroll', 'skull'] as IconKey[],
-  characters: ['quester'] as IconKey[],
+  heroes: ['quester', 'paladin', 'necromancer', 'weakWizard', 'arcanerogue', 'arcaneHalberdman', 'armourSwordman', 'axeHandHornman', 'bloodyAxeman', 'bloodyKnifeman', 'darkKnifeman', 'darkman', 'halberdman', 'shieldman', 'staffCloakman', 'swordman', 'torchman'] as IconKey[],
+  enemies: ['bat', 'blackHulk', 'bluebottle', 'centipede', 'chimera', 'hobgob', 'hoodZombie', 'maggot', 'mermaiden', 'plagueRat', 'skinnyZombie', 'spider', 'spiderHatchling', 'spiderRat', 'strongZombie', 'succubus'] as IconKey[],
 };

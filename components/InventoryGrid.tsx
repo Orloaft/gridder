@@ -14,6 +14,7 @@ interface InventoryGridProps {
   onItemHover: (item: ItemInstance | null) => void;
   onItemDragStart: (item: ItemInstance) => void;
   onItemDragEnd: () => void;
+  cellSize?: number; // Optional cell size for responsive layouts
 }
 
 export const InventoryGrid = forwardRef<HTMLDivElement, InventoryGridProps>(
@@ -27,10 +28,10 @@ export const InventoryGrid = forwardRef<HTMLDivElement, InventoryGridProps>(
       onItemHover,
       onItemDragStart,
       onItemDragEnd,
+      cellSize = 80, // Default to 80, can be overridden for responsive layouts
     },
     ref
   ) {
-    const cellSize = 80; // Smaller cells for inventory
     const rows = 12; // Increased for player stats
     const cols = 3;
 
@@ -90,7 +91,7 @@ export const InventoryGrid = forwardRef<HTMLDivElement, InventoryGridProps>(
           Array.from({ length: cols }).map((_, col) => (
             <div
               key={`cell-${row}-${col}`}
-              className="absolute border border-gray-700/30 hover:bg-gray-700/10 transition-colors cursor-pointer"
+              className="absolute border border-transparent hover:bg-gray-700/10 transition-colors cursor-pointer"
               style={{
                 left: col * cellSize,
                 top: row * cellSize,

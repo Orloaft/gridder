@@ -12,6 +12,7 @@ import { audioManager } from '@/utils/audioManager';
 import { getStageById } from '@/data/stages';
 import { useBattleAutoAdvance } from '@/hooks/useBattleAutoAdvance';
 import { useBattleAnimations } from '@/hooks/useBattleAnimations';
+import { useResponsiveGrid } from '@/hooks/useResponsiveGrid';
 import { GridHero, GridEnemy, isGridHero, isGridEnemy, AnyGridOccupant } from '@/types/grid.types';
 import { ItemInstance } from '@/types/core.types';
 
@@ -32,6 +33,9 @@ export default function Home() {
 
   // Handle battle animations
   useBattleAnimations();
+
+  // Get responsive dimensions
+  const responsiveDimensions = useResponsiveGrid();
 
   const {
     gridOccupants,
@@ -209,12 +213,13 @@ export default function Home() {
       >
         {/* Unit Info Panel on the left */}
         {showGrid && (
-          <div className="h-[800px]">
+          <div style={{ height: responsiveDimensions.totalHeight }}>
             <UnitInfoPanel
               unit={hoveredUnit}
               hoveredItem={hoveredItem}
               roster={roster}
               inventory={inventory}
+              width={responsiveDimensions.unitInfoPanelWidth}
             />
           </div>
         )}
@@ -226,7 +231,7 @@ export default function Home() {
             ref={gridRef}
             rows={8}
             cols={8}
-            cellSize={100}
+            cellSize={responsiveDimensions.mainGridCellSize}
             occupants={showGrid ? gridOccupants : []}
             onUnitHover={handleUnitHover}
           />
@@ -234,7 +239,7 @@ export default function Home() {
 
         {/* Player Inventory Grid on the right */}
         {showGrid && (
-          <div className="h-[800px]">
+          <div style={{ height: responsiveDimensions.totalHeight }}>
             <InventoryGrid
               ref={inventoryGridRef}
               gold={player.gold}
@@ -245,6 +250,7 @@ export default function Home() {
               onItemHover={handleItemHover}
               onItemDragStart={handleItemDragStart}
               onItemDragEnd={handleItemDragEnd}
+              cellSize={responsiveDimensions.inventoryGridCellSize}
             />
           </div>
         )}

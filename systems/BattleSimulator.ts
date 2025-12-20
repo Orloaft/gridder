@@ -57,6 +57,21 @@ export class BattleSimulator {
   private state: BattleState;
 
   constructor(heroes: Hero[], enemies: Enemy[]) {
+    // Helper to calculate position with bounds checking
+    const getHeroPosition = (index: number): GridPosition => {
+      return {
+        row: Math.max(0, Math.min(7, 2 + Math.floor(index / 2))), // Row 2-7, capped (6 rows * 2 cols = 12 max units)
+        col: Math.max(0, Math.min(7, index % 2)) // Col 0-1, capped
+      };
+    };
+
+    const getEnemyPosition = (index: number): GridPosition => {
+      return {
+        row: Math.max(0, Math.min(7, 2 + Math.floor(index / 2))), // Row 2-7, capped (6 rows * 2 cols = 12 max units)
+        col: Math.max(0, Math.min(7, 7 - (index % 2))) // Col 6-7, capped
+      };
+    };
+
     // Convert heroes and enemies to battle units
     // Heroes start on left side, spread across rows if needed
     const heroUnits: BattleUnit[] = heroes.map((h, index) => ({
@@ -69,10 +84,7 @@ export class BattleSimulator {
       statusEffects: [],
       isHero: true,
       isAlive: true,
-      position: {
-        row: 3 + Math.floor(index / 2), // Row 3-5 (spread vertically)
-        col: index % 2 // Col 0-1
-      },
+      position: getHeroPosition(index),
       range: 1, // Default melee range
       cooldown: 0, // Start at 0, will fill to 100
       cooldownRate: h.currentStats.speed / 10, // Divide by 10 for slower, more visible cooldowns
@@ -87,10 +99,7 @@ export class BattleSimulator {
       statusEffects: [],
       isHero: false,
       isAlive: true,
-      position: {
-        row: 3 + Math.floor(index / 2), // Row 3-5 (spread vertically)
-        col: 7 - (index % 2) // Col 6-7
-      },
+      position: getEnemyPosition(index),
       range: 1, // Default melee range
       cooldown: 0, // Start at 0, will fill to 100
       cooldownRate: e.currentStats.speed / 10, // Divide by 10 for slower, more visible cooldowns
@@ -131,6 +140,16 @@ export class BattleSimulator {
     }
 
     return this.state;
+  }
+
+  /**
+   * Clamp position to valid grid bounds (0-7)
+   */
+  private clampPosition(position: GridPosition): GridPosition {
+    return {
+      row: Math.max(0, Math.min(7, position.row)),
+      col: Math.max(0, Math.min(7, position.col)),
+    };
   }
 
   /**
@@ -229,15 +248,25 @@ export class BattleSimulator {
     const shouldMove = distIncrease <= 1; // Allow moving up to 1 step farther to navigate around obstacles
 
     if (shouldMove) {
-      unit.position = bestMove;
+      // Clamp position to ensure it stays within grid bounds (extra safety check)
+      const clampedMove = this.clampPosition(bestMove);
 
-      // Add movement event
-      this.addEvent(BattleEventType.Move, {
-        unit: unit.name,
-        unitId: unit.id,
-        from: oldPosition,
-        to: { ...unit.position },
-      });
+      // Double-check the clamped position is valid before assigning
+      if (clampedMove.row >= 0 && clampedMove.row <= 7 &&
+          clampedMove.col >= 0 && clampedMove.col <= 7) {
+        unit.position = clampedMove;
+
+        // Add movement event
+        this.addEvent(BattleEventType.Move, {
+          unit: unit.name,
+          unitId: unit.id,
+          from: oldPosition,
+          to: { ...unit.position },
+        });
+      } else {
+        // This should never happen, but log it if it does
+        console.error('Attempted to move unit to invalid position:', clampedMove, 'unit:', unit.name);
+      }
     }
   }
 
@@ -408,6 +437,12 @@ export class BattleSimulator {
 
     // Get all alive units
     const allUnits = [...this.state.heroes, ...this.state.enemies].filter(u => u.isAlive);
+
+    // Safety check: Ensure all unit positions are within bounds
+    // This catches any edge cases where positions might have gone out of bounds
+    for (const unit of allUnits) {
+      unit.position = this.clampPosition(unit.position);
+    }
 
     // Advance cooldowns for all units
     const cooldownUpdates: any[] = [];

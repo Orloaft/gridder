@@ -69,7 +69,7 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
           return (
             <div
               key={`cell-${row}-${col}`}
-              className="border border-gray-800/20 hover:bg-gray-700/10 transition-colors cursor-pointer"
+              className="border border-transparent hover:bg-gray-700/10 transition-colors cursor-pointer"
               onClick={() => handleCellClick(row, col)}
             />
           );

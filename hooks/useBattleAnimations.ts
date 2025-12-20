@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
 import { BattleEventType } from '@/systems/BattleSimulator';
 import { animateTileSlide, animateAttack, animateDamage, animateDeath } from '@/animations/tileAnimations';
+import { useResponsiveGrid } from '@/hooks/useResponsiveGrid';
 
 /**
  * Hook to handle battle animations based on events
@@ -10,6 +11,7 @@ import { animateTileSlide, animateAttack, animateDamage, animateDeath } from '@/
 export function useBattleAnimations() {
   const { currentScreen, currentBattle, battleEventIndex } = useGameStore();
   const previousEventIndex = useRef(-1);
+  const responsiveDimensions = useResponsiveGrid();
 
   useEffect(() => {
     // Only run in battle screen
@@ -37,7 +39,8 @@ export function useBattleAnimations() {
         if (unitCard) {
           const unitWrapper = unitCard.parentElement;
           if (unitWrapper instanceof HTMLElement) {
-            const cellSize = 100; // Match your grid cell size
+            // Use responsive cell size from grid system
+            const cellSize = responsiveDimensions.mainGridCellSize;
             animateTileSlide(
               unitWrapper,
               event.data.from,
@@ -79,5 +82,5 @@ export function useBattleAnimations() {
         break;
       }
     }
-  }, [currentScreen, currentBattle, battleEventIndex]);
+  }, [currentScreen, currentBattle, battleEventIndex, responsiveDimensions.mainGridCellSize]);
 }
