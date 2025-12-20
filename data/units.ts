@@ -1,5 +1,5 @@
 // Hero and Enemy unit templates
-import { HeroTemplate, EnemyTemplate, Rarity, UnitStats, Ability, AbilityType } from '@/types/core.types';
+import { HeroTemplate, EnemyTemplate, Rarity, UnitStats, Ability, AbilityType, StatusEffectType, AIPattern } from '@/types/core.types';
 import { ICON_PATHS } from '@/utils/iconPaths';
 
 // Base stats template helper
@@ -213,6 +213,144 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     rarity: Rarity.Common,
     description: 'Versatile adventurer ready for any challenge',
   },
+
+  // NEW HEROES - Advanced Combat System
+
+  ironheart: {
+    id: 'ironheart',
+    class: 'Paladin',
+    name: 'Ironheart',
+    title: 'The Unyielding',
+    baseStats: {
+      hp: 250,
+      maxHp: 250,
+      damage: 40,
+      speed: 85,
+      defense: 30,
+      critChance: 0.05,
+      critDamage: 1.3,
+      evasion: 0.02,
+      accuracy: 0.95,
+    },
+    abilities: [
+      {
+        id: 'shield_bash',
+        name: 'Shield Bash',
+        type: AbilityType.Offensive,
+        description: 'Smash an enemy with your shield, dealing damage and stunning them for 1 turn',
+        cooldown: 3,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'damage',
+            value: 60,
+            targetType: 'enemy',
+          },
+          {
+            type: 'status',
+            statusType: StatusEffectType.Stun,
+            duration: 1,
+            targetType: 'enemy',
+          },
+        ],
+      },
+      {
+        id: 'divine_light',
+        name: 'Divine Light',
+        type: AbilityType.Support,
+        description: 'Heal all allies for 40 HP and cleanse one debuff',
+        cooldown: 4,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'heal',
+            value: 40,
+            targetType: 'allAllies',
+          },
+        ],
+      },
+    ],
+    spritePath: ICON_PATHS.shield,
+    rarity: Rarity.Epic,
+    description: 'Stalwart defender who protects allies and disrupts enemies',
+    tags: ['tank', 'support', 'melee', 'control'],
+  },
+
+  shadow: {
+    id: 'shadow',
+    class: 'Assassin',
+    name: 'Shadow',
+    title: 'The Phantom Blade',
+    baseStats: {
+      hp: 140,
+      maxHp: 140,
+      damage: 85,
+      speed: 140,
+      defense: 10,
+      critChance: 0.35,
+      critDamage: 2.2,
+      evasion: 0.20,
+      accuracy: 0.95,
+    },
+    abilities: [
+      {
+        id: 'piercing_strike',
+        name: 'Piercing Strike',
+        type: AbilityType.Offensive,
+        description: 'Critical strike that ignores 40% of enemy armor. Bonus damage from behind.',
+        cooldown: 2,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'damage',
+            value: 110,
+            targetType: 'enemy',
+          },
+          {
+            type: 'conditional',
+            condition: 'attacking_from_behind',
+            damageMultiplier: 1.5,
+            targetType: 'enemy',
+          },
+        ],
+      },
+      {
+        id: 'vanish',
+        name: 'Vanish',
+        type: AbilityType.Support,
+        description: 'Become invisible for 2 turns, gaining 100% evasion and increased crit chance',
+        cooldown: 5,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'status',
+            statusType: StatusEffectType.Invisibility,
+            duration: 2,
+            targetType: 'self',
+            statModifier: {
+              stat: 'evasion',
+              value: 1.0,
+              isPercent: false,
+            },
+          },
+          {
+            type: 'buff',
+            duration: 2,
+            targetType: 'self',
+            statModifier: {
+              stat: 'critChance',
+              value: 0.25,
+              isPercent: false,
+            },
+          },
+        ],
+      },
+    ],
+    spritePath: ICON_PATHS.skull,
+    rarity: Rarity.Legendary,
+    description: 'Glass cannon assassin with extreme crit and evasion',
+    tags: ['dps', 'assassin', 'melee', 'critical'],
+  },
 };
 
 // Enemy Templates
@@ -223,7 +361,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     type: 'Beast',
     baseStats: createStats(40, 15, 130),
     abilities: [],
-    spritePath: '🐀',
+    spritePath: '/icons/plague_rat.PNG',
     description: 'Diseased rodent',
   },
 
@@ -306,6 +444,157 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     spritePath: ICON_PATHS.skull,
     description: 'Master of death magic',
   },
+
+  // NEW ENEMIES - Advanced Combat System
+
+  bonecrusher: {
+    id: 'bonecrusher',
+    name: 'Bonecrusher',
+    title: 'The Savage',
+    type: 'Brute',
+    baseStats: {
+      hp: 280,
+      maxHp: 280,
+      damage: 50,
+      speed: 75,
+      defense: 20,
+      critChance: 0.10,
+      critDamage: 1.5,
+      evasion: 0.05,
+      accuracy: 0.90,
+    },
+    abilities: [
+      {
+        id: 'devastating_slam',
+        name: 'Devastating Slam',
+        type: AbilityType.Offensive,
+        description: 'Powerful AoE attack that damages and slows all nearby heroes',
+        cooldown: 4,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'damage',
+            value: 65,
+            targetType: 'aoe',
+            radius: 2,
+          },
+          {
+            type: 'status',
+            statusType: StatusEffectType.Slow,
+            duration: 2,
+            targetType: 'aoe',
+            radius: 2,
+            statModifier: {
+              stat: 'speed',
+              value: -30,
+              isPercent: true,
+            },
+          },
+        ],
+      },
+      {
+        id: 'berserk_rage',
+        name: 'Berserk Rage',
+        type: AbilityType.Support,
+        description: 'Enter a rage, gaining bonus damage and attack speed but losing defense',
+        cooldown: 5,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'status',
+            statusType: StatusEffectType.Enrage,
+            duration: 3,
+            targetType: 'self',
+            statModifier: {
+              stat: 'damage',
+              value: 40,
+              isPercent: true,
+            },
+          },
+          {
+            type: 'debuff',
+            duration: 3,
+            targetType: 'self',
+            statModifier: {
+              stat: 'defense',
+              value: -30,
+              isPercent: true,
+            },
+          },
+        ],
+      },
+    ],
+    spritePath: ICON_PATHS.skull,
+    description: 'Massive brute who trades defense for overwhelming offense',
+    aiPattern: AIPattern.Aggressive,
+    tags: ['tank', 'aoe', 'melee', 'disruption'],
+  },
+
+  whisperwind: {
+    id: 'whisperwind',
+    name: 'Whisperwind',
+    title: 'The Eternal Shadow',
+    type: 'Wraith',
+    baseStats: {
+      hp: 110,
+      maxHp: 110,
+      damage: 65,
+      speed: 130,
+      defense: 5,
+      critChance: 0.25,
+      critDamage: 2.0,
+      evasion: 0.35,
+      accuracy: 0.90,
+      flying: true,
+    },
+    abilities: [
+      {
+        id: 'soul_drain',
+        name: 'Soul Drain',
+        type: AbilityType.Offensive,
+        description: 'Drains life from target, healing self for 50% of damage dealt',
+        cooldown: 3,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'damage',
+            value: 70,
+            targetType: 'enemy',
+          },
+          {
+            type: 'lifesteal',
+            value: 0.5,
+            targetType: 'self',
+          },
+        ],
+      },
+      {
+        id: 'phase_shift',
+        name: 'Phase Shift',
+        type: AbilityType.Support,
+        description: 'Become incorporeal for 2 turns, gaining immunity to physical damage',
+        cooldown: 5,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'status',
+            statusType: StatusEffectType.Incorporeal,
+            duration: 2,
+            targetType: 'self',
+            statModifier: {
+              stat: 'evasion',
+              value: 0.50,
+              isPercent: false,
+            },
+          },
+        ],
+      },
+    ],
+    spritePath: '👻',
+    description: 'Elusive wraith with extreme evasion and lifesteal',
+    aiPattern: AIPattern.Opportunistic,
+    tags: ['assassin', 'evasion', 'lifesteal', 'flyer', 'undead'],
+  },
 };
 
 // Helper function to create a hero instance
@@ -320,7 +609,7 @@ export function createHeroInstance(templateId: string, level: number = 1): any {
     instanceId: `${templateId}_${Date.now()}_${Math.random()}`,
     level,
     experience: 0,
-    equippedItems: [],
+    equippedItem: undefined,
     currentStats: { ...template.baseStats },
   };
 }

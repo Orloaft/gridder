@@ -15,7 +15,8 @@ export function createPreBattleLayout(
   onHeroSelect: (heroId: string) => void,
   onHeroRemove: (heroId: string) => void,
   onReady: () => void,
-  onSetTeam?: (team: string[]) => void
+  onSetTeam?: (team: string[]) => void,
+  onItemEquip?: (itemId: string, heroId: string) => void
 ): AnyGridOccupant[] {
   // Use the global transition-aware navigate function
   const navigate = (screen: ScreenType) => {
@@ -48,24 +49,6 @@ export function createPreBattleLayout(
     content: stage.name,
     variant: 'info',
     animationDelay: 0.15,
-  });
-
-  occupants.push({
-    id: 'resource-gold',
-    type: GridOccupantType.Resource,
-    position: { row: 0, col: 6 },
-    resourceType: 'gold',
-    amount: playerGold,
-    animationDelay: 0.2,
-  });
-
-  occupants.push({
-    id: 'resource-gems',
-    type: GridOccupantType.Resource,
-    position: { row: 0, col: 7 },
-    resourceType: 'gems',
-    amount: playerGems,
-    animationDelay: 0.25,
   });
 
   // Row 1: Enemy Preview Label
@@ -158,6 +141,10 @@ export function createPreBattleLayout(
             onSetTeam(newTeam);
           }
         },
+        // Item equipping
+        onItemDrop: onItemEquip ? (itemId: string) => {
+          onItemEquip(itemId, heroId);
+        } : undefined,
       });
     } else {
       // Show empty slot (drop target)

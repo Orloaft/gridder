@@ -26,40 +26,48 @@ export function GridResourceCard({ resource, cellSize }: GridResourceCardProps) 
 
   // Entrance animation with optional delay (skip during grid transitions)
   useEffect(() => {
-    if (cardRef.current && !(window as any).__disableCardAnimations) {
-      const delay = resource.animationDelay || 0;
-      animateCardEntrance(cardRef.current, delay);
+    if (cardRef.current) {
+      const isGridTransition = (window as any).__isGridTransition;
+      const disableCardAnimations = (window as any).__disableCardAnimations;
+
+      if (isGridTransition) {
+        // During grid transitions, keep card hidden - animateGridEntrance will show it
+        return;
+      } else if (disableCardAnimations) {
+        // During drag-and-drop updates, show card immediately without animation
+        cardRef.current.style.opacity = '1';
+        cardRef.current.style.transform = 'scale(1)';
+      } else {
+        // Normal entrance animation
+        const delay = resource.animationDelay || 0;
+        animateCardEntrance(cardRef.current, delay);
+      }
     }
-  }, [resource.animationDelay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   return (
     <div
       ref={cardRef}
       data-grid-card
-      className={`relative w-full h-full bg-gradient-to-br ${config.color} border-2 ${config.border} rounded-lg overflow-hidden flex flex-col items-center justify-center shadow-lg`}
+      className={`relative w-full h-full bg-gradient-to-br ${config.color} border-2 ${config.border} rounded-lg overflow-hidden shadow-lg`}
       style={{ opacity: 0, transform: 'scale(0)' }}
     >
-      {/* Icon */}
-      <div className="relative" style={{ width: cellSize * 0.4, height: cellSize * 0.4 }}>
+      {/* Icon fills entire tile */}
+      <div className="absolute inset-0 flex items-center justify-center">
         {isImageIcon ? (
-          <Image
-            src={iconPath}
-            alt={resource.resourceType}
-            fill
-            className="object-contain pixelated"
-            style={{ imageRendering: 'pixelated' }}
-          />
+          <div className="relative w-full h-full">
+            <Image
+              src={iconPath}
+              alt={resource.resourceType}
+              fill
+              className="object-contain pixelated"
+              style={{ imageRendering: 'pixelated' }}
+            />
+          </div>
         ) : (
-          <div style={{ fontSize: cellSize * 0.35 }}>{iconPath}</div>
+          <div style={{ fontSize: cellSize * 0.7 }}>{iconPath}</div>
         )}
-      </div>
-
-      {/* Amount */}
-      <div
-        className="text-white font-bold mt-1 drop-shadow-lg"
-        style={{ fontSize: cellSize * 0.15 }}
-      >
-        {resource.amount.toLocaleString()}
       </div>
     </div>
   );

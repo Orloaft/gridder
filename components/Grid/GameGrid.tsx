@@ -11,6 +11,7 @@ export interface GameGridProps {
   occupants: AnyGridOccupant[];
   onOccupantClick?: (occupant: AnyGridOccupant) => void;
   onEmptyCellClick?: (position: GridPosition) => void;
+  onUnitHover?: (occupant: AnyGridOccupant | null) => void;
 }
 
 export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
@@ -22,6 +23,7 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
       occupants,
       onOccupantClick,
       onEmptyCellClick,
+      onUnitHover,
     },
     ref
   ) {
@@ -87,6 +89,8 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
               height: cellSize,
             }}
             onClick={() => onOccupantClick?.(occupant)}
+            onMouseEnter={() => onUnitHover?.(occupant)}
+            onMouseLeave={() => onUnitHover?.(null)}
           >
             <GridOccupantRenderer occupant={occupant} cellSize={cellSize} />
           </div>

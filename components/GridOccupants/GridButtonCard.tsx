@@ -47,7 +47,8 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
         animateCardEntrance(buttonRef.current, delay);
       }
     }
-  }, [button.animationDelay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (buttonRef.current && !button.disabled) {
@@ -83,6 +84,9 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
     }
   };
 
+  // Check if this is the speed button (has lightning icon and label like "1x", "4x", "8x")
+  const isSpeedButton = button.icon === '⚡' && /^\d+x$/.test(button.label);
+
   return (
     <button
       ref={buttonRef}
@@ -96,34 +100,35 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
       className={`relative w-full h-full bg-gradient-to-br ${baseStyles} border-2 rounded-lg overflow-hidden shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
       style={{ opacity: 0, transform: 'scale(0)' }}
     >
-      {/* Icon (if provided) */}
-      {button.icon && (
-        <div className="absolute top-2 left-0 right-0 flex justify-center">
-          {isImageIcon ? (
-            <div className="relative" style={{ width: cellSize * 0.4, height: cellSize * 0.4 }}>
-              <Image
-                src={button.icon}
-                alt={button.label}
-                fill
-                className="object-contain pixelated"
-                style={{ imageRendering: 'pixelated' }}
-              />
-            </div>
-          ) : (
-            <div style={{ fontSize: cellSize * 0.3 }}>{button.icon}</div>
-          )}
+      {/* Icon fills entire tile */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        {isImageIcon ? (
+          <div className="relative w-full h-full">
+            <Image
+              src={button.icon!}
+              alt={button.label}
+              fill
+              className="object-contain pixelated"
+              style={{ imageRendering: 'pixelated' }}
+            />
+          </div>
+        ) : button.icon ? (
+          <div style={{ fontSize: cellSize * 0.7 }}>{button.icon}</div>
+        ) : (
+          <div className="text-white font-bold" style={{ fontSize: cellSize * 0.15 }}>
+            {button.label}
+          </div>
+        )}
+      </div>
+
+      {/* Speed button: show speed text at bottom */}
+      {isSpeedButton && (
+        <div className="absolute bottom-1 left-0 right-0 flex justify-center">
+          <div className="bg-black/60 px-2 py-0.5 rounded text-white font-bold" style={{ fontSize: cellSize * 0.15 }}>
+            {button.label}
+          </div>
         </div>
       )}
-
-      {/* Label */}
-      <div className="absolute bottom-0 left-0 right-0 p-2 text-center">
-        <div
-          className="text-white font-bold drop-shadow-lg"
-          style={{ fontSize: cellSize * 0.14 }}
-        >
-          {button.label}
-        </div>
-      </div>
     </button>
   );
 }

@@ -23,11 +23,25 @@ export function GridStatusPanelCard({ statusPanel, cellSize }: GridStatusPanelCa
 
   // Entrance animation with optional delay (skip during grid transitions)
   useEffect(() => {
-    if (cardRef.current && !(window as any).__disableCardAnimations) {
-      const delay = statusPanel.animationDelay || 0;
-      animateCardEntrance(cardRef.current, delay);
+    if (cardRef.current) {
+      const isGridTransition = (window as any).__isGridTransition;
+      const disableCardAnimations = (window as any).__disableCardAnimations;
+
+      if (isGridTransition) {
+        // During grid transitions, keep card hidden - animateGridEntrance will show it
+        return;
+      } else if (disableCardAnimations) {
+        // During drag-and-drop updates, show card immediately without animation
+        cardRef.current.style.opacity = '1';
+        cardRef.current.style.transform = 'scale(1)';
+      } else {
+        // Normal entrance animation
+        const delay = statusPanel.animationDelay || 0;
+        animateCardEntrance(cardRef.current, delay);
+      }
     }
-  }, [statusPanel.animationDelay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   return (
     <div

@@ -35,11 +35,25 @@ export function GridDecorationCard({ decoration, cellSize }: GridDecorationCardP
 
   // Entrance animation with optional delay (skip during grid transitions)
   useEffect(() => {
-    if (cardRef.current && !(window as any).__disableCardAnimations) {
-      const delay = decoration.animationDelay || 0;
-      animateCardEntrance(cardRef.current, delay);
+    if (cardRef.current) {
+      const isGridTransition = (window as any).__isGridTransition;
+      const disableCardAnimations = (window as any).__disableCardAnimations;
+
+      if (isGridTransition) {
+        // During grid transitions, keep card hidden - animateGridEntrance will show it
+        return;
+      } else if (disableCardAnimations) {
+        // During drag-and-drop updates, show card immediately without animation
+        cardRef.current.style.opacity = '1';
+        cardRef.current.style.transform = 'scale(1)';
+      } else {
+        // Normal entrance animation
+        const delay = decoration.animationDelay || 0;
+        animateCardEntrance(cardRef.current, delay);
+      }
     }
-  }, [decoration.animationDelay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   return (
     <div
@@ -49,7 +63,7 @@ export function GridDecorationCard({ decoration, cellSize }: GridDecorationCardP
       style={{ opacity: 0, transform: 'scale(0)' }}
     >
       {decoration.spritePath ? (
-        <div style={{ fontSize: cellSize * 0.5 }}>
+        <div style={{ fontSize: cellSize * 0.7 }}>
           {decoration.spritePath}
         </div>
       ) : decoration.text ? (

@@ -5,19 +5,27 @@ import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
 import { GameGrid } from '@/components/Grid/GameGrid';
 import { LoadingBar } from '@/components/LoadingBar';
+import { UnitInfoPanel } from '@/components/UnitInfoPanel';
+import { InventoryGrid } from '@/components/InventoryGrid';
 import { animateGridTransition, animateGridEntrance } from '@/animations/gridTransitions';
 import { audioManager } from '@/utils/audioManager';
 import { getStageById } from '@/data/stages';
 import { useBattleAutoAdvance } from '@/hooks/useBattleAutoAdvance';
 import { useBattleAnimations } from '@/hooks/useBattleAnimations';
+import { GridHero, GridEnemy, isGridHero, isGridEnemy, AnyGridOccupant } from '@/types/grid.types';
+import { ItemInstance } from '@/types/core.types';
 
 export default function Home() {
   const screenRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const inventoryGridRef = useRef<HTMLDivElement>(null);
   const isTransitioning = useRef(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showGrid, setShowGrid] = useState(false);
+  const [hoveredUnit, setHoveredUnit] = useState<GridHero | GridEnemy | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<ItemInstance | null>(null);
+  const [draggedItem, setDraggedItem] = useState<ItemInstance | null>(null);
 
   // Auto-advance battle events (200ms base for tick-based combat)
   useBattleAutoAdvance(200);
@@ -32,7 +40,13 @@ export default function Home() {
     currentScreen,
     selectedStageId,
     campaign,
+    player,
+    inventory,
+    roster,
+    equipItem,
   } = useGameStore();
+
+  const prevInventoryLength = useRef(inventory.length);
 
   // Initialize grid immediately on mount (before loading)
   useEffect(() => {
@@ -77,7 +91,8 @@ export default function Home() {
       gridRef.current,
       () => {
         // This callback happens between exit and entrance
-        navigate(screen);
+        // Navigate returns the number of new occupants
+        return navigate(screen);
       },
       () => {
         // This callback happens when transition is complete
@@ -137,18 +152,102 @@ export default function Home() {
     }
   };
 
+  // Handle unit hover
+  const handleUnitHover = useCallback((occupant: AnyGridOccupant | null) => {
+    if (occupant && (isGridHero(occupant) || isGridEnemy(occupant))) {
+      setHoveredUnit(occupant);
+    } else {
+      setHoveredUnit(null);
+    }
+  }, []);
+
+  // Handle item hover
+  const handleItemHover = useCallback((item: ItemInstance | null) => {
+    setHoveredItem(item);
+  }, []);
+
+  // Handle item drag start
+  const handleItemDragStart = useCallback((item: ItemInstance) => {
+    setDraggedItem(item);
+  }, []);
+
+  // Handle item drag end
+  const handleItemDragEnd = useCallback(() => {
+    setDraggedItem(null);
+  }, []);
+
+  // Animate inventory grid when items change
+  useEffect(() => {
+    if (!inventoryGridRef.current || !showGrid) return;
+
+    // Check if inventory length changed (item added or removed)
+    if (prevInventoryLength.current !== inventory.length) {
+      // Set grid transition flag to prevent individual card animations
+      (window as any).__isGridTransition = true;
+
+      // Trigger entrance animation for inventory cards
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (inventoryGridRef.current) {
+            animateGridEntrance(inventoryGridRef.current, () => {
+              // Clear grid transition flag after animation completes
+              (window as any).__isGridTransition = false;
+            });
+          }
+        });
+      });
+      prevInventoryLength.current = inventory.length;
+    }
+  }, [inventory.length, showGrid]);
+
   return (
     <>
       {/* Main Game - always rendered, background always visible */}
       <div
         ref={screenRef}
-        className={`min-h-screen ${getBackgroundClass()} flex flex-col items-center justify-center p-8 gap-8 transition-colors duration-700`}
+        className={`min-h-screen ${getBackgroundClass()} flex items-center justify-center p-8 gap-8 transition-colors duration-700`}
       >
+        {/* Unit Info Panel on the left */}
+        {showGrid && (
+          <div className="h-[800px]">
+            <UnitInfoPanel
+              unit={hoveredUnit}
+              hoveredItem={hoveredItem}
+              roster={roster}
+              inventory={inventory}
+            />
+          </div>
+        )}
+
         {/* Single Persistent Grid - everything happens here */}
         {/* Grid background is always visible, but tiles are hidden until loading completes */}
         <div style={{ opacity: showGrid ? 1 : 1 }}>
-          <GameGrid ref={gridRef} rows={8} cols={8} cellSize={100} occupants={showGrid ? gridOccupants : []} />
+          <GameGrid
+            ref={gridRef}
+            rows={8}
+            cols={8}
+            cellSize={100}
+            occupants={showGrid ? gridOccupants : []}
+            onUnitHover={handleUnitHover}
+          />
         </div>
+
+        {/* Player Inventory Grid on the right */}
+        {showGrid && (
+          <div className="h-[800px]">
+            <InventoryGrid
+              ref={inventoryGridRef}
+              gold={player.gold}
+              gems={player.gems}
+              currentStage={`Stage ${campaign.currentStage}`}
+              playerLevel={player.level}
+              inventory={inventory}
+              onItemHover={handleItemHover}
+              onItemDragStart={handleItemDragStart}
+              onItemDragEnd={handleItemDragEnd}
+            />
+          </div>
+        )}
       </div>
 
       {/* Loading Bar - overlays on top of grid and background */}

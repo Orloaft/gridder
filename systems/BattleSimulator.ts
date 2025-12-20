@@ -1,4 +1,4 @@
-import { Hero, Enemy, UnitStats } from '@/types/core.types';
+import { Hero, Enemy, UnitStats, StatusEffect, StatusEffectType } from '@/types/core.types';
 import { GridPosition } from '@/types/grid.types';
 
 // Battle event types
@@ -12,6 +12,10 @@ export enum BattleEventType {
   Death = 'death',
   Victory = 'victory',
   Defeat = 'defeat',
+  StatusApplied = 'statusApplied',
+  StatusExpired = 'statusExpired',
+  CriticalHit = 'criticalHit',
+  Evaded = 'evaded',
 }
 
 export interface BattleEvent {
@@ -25,7 +29,9 @@ export interface BattleUnit {
   name: string;
   class?: string;
   spritePath?: string;
-  stats: UnitStats;
+  baseStats: UnitStats; // Original stats before buffs/debuffs
+  stats: UnitStats; // Current stats (modified by status effects)
+  statusEffects: StatusEffect[]; // Active buffs/debuffs
   isHero: boolean;
   isAlive: boolean;
   position: GridPosition;
@@ -58,7 +64,9 @@ export class BattleSimulator {
       name: h.name,
       class: h.class,
       spritePath: h.spritePath,
+      baseStats: { ...h.currentStats },
       stats: { ...h.currentStats },
+      statusEffects: [],
       isHero: true,
       isAlive: true,
       position: {
@@ -74,7 +82,9 @@ export class BattleSimulator {
       id: e.instanceId,
       name: e.name,
       spritePath: e.spritePath,
+      baseStats: { ...e.currentStats },
       stats: { ...e.currentStats },
+      statusEffects: [],
       isHero: false,
       isAlive: true,
       position: {
@@ -232,11 +242,169 @@ export class BattleSimulator {
   }
 
   /**
+   * Process status effects (buffs, debuffs, DoT) at the start of each tick
+   */
+  private processStatusEffects(): void {
+    const allUnits = [...this.state.heroes, ...this.state.enemies].filter(u => u.isAlive);
+
+    for (const unit of allUnits) {
+      // Process each active status effect
+      for (const effect of [...unit.statusEffects]) {
+        // Process DoT damage
+        if (effect.damagePerTick && effect.damagePerTick > 0) {
+          unit.stats.hp = Math.max(0, unit.stats.hp - effect.damagePerTick);
+          this.addEvent(BattleEventType.Damage, {
+            target: unit.name,
+            targetId: unit.id,
+            damage: effect.damagePerTick,
+            remainingHp: Math.floor(unit.stats.hp),
+            source: 'DoT',
+            statusType: effect.statusType,
+          });
+
+          // Check for death from DoT
+          if (unit.stats.hp <= 0) {
+            unit.isAlive = false;
+            this.addEvent(BattleEventType.Death, {
+              unit: unit.name,
+              unitId: unit.id,
+              cause: 'DoT',
+            });
+          }
+        }
+
+        // Decrement duration
+        effect.remainingDuration--;
+
+        // Remove expired effects
+        if (effect.remainingDuration <= 0) {
+          unit.statusEffects = unit.statusEffects.filter(e => e.id !== effect.id);
+          this.addEvent(BattleEventType.StatusExpired, {
+            unit: unit.name,
+            unitId: unit.id,
+            effect: effect.name,
+            statusType: effect.statusType,
+          });
+
+          // Recalculate stats after removing effect
+          this.recalculateStats(unit);
+        }
+      }
+    }
+  }
+
+  /**
+   * Recalculate unit stats based on active status effects
+   */
+  private recalculateStats(unit: BattleUnit): void {
+    // Start with base stats
+    unit.stats = { ...unit.baseStats };
+
+    // Apply all active status effects
+    for (const effect of unit.statusEffects) {
+      if (effect.stat && effect.value !== undefined) {
+        const currentValue = unit.stats[effect.stat] as number;
+
+        if (effect.isPercent) {
+          // Percentage modifier
+          unit.stats[effect.stat] = currentValue * (1 + effect.value / 100) as any;
+        } else {
+          // Flat modifier
+          unit.stats[effect.stat] = Math.max(0, currentValue + effect.value) as any;
+        }
+      }
+
+      // Handle shield amounts (additive)
+      if (effect.shieldAmount && effect.shieldAmount > 0) {
+        // Shields are separate from HP but absorb damage first (not implemented in this version)
+        // For now, we'll just track them
+      }
+    }
+
+    // Update cooldown rate based on new speed
+    unit.cooldownRate = unit.stats.speed / 10;
+  }
+
+  /**
+   * Apply a status effect to a unit
+   */
+  private applyStatusEffect(unit: BattleUnit, statusType: StatusEffectType, duration: number, options?: {
+    damagePerTick?: number;
+    stat?: keyof UnitStats;
+    value?: number;
+    isPercent?: boolean;
+  }): void {
+    const effect: StatusEffect = {
+      id: `${statusType}_${Date.now()}_${Math.random()}`,
+      name: statusType,
+      type: this.getStatusEffectCategory(statusType),
+      statusType,
+      duration,
+      remainingDuration: duration,
+      ...options,
+    };
+
+    unit.statusEffects.push(effect);
+
+    this.addEvent(BattleEventType.StatusApplied, {
+      unit: unit.name,
+      unitId: unit.id,
+      effect: effect.name,
+      statusType: effect.statusType,
+      duration,
+    });
+
+    // Recalculate stats immediately
+    this.recalculateStats(unit);
+  }
+
+  /**
+   * Determine status effect category
+   */
+  private getStatusEffectCategory(statusType: StatusEffectType): 'buff' | 'debuff' | 'control' | 'dot' | 'special' {
+    const controlEffects = [StatusEffectType.Stun, StatusEffectType.Root, StatusEffectType.Silence,
+                           StatusEffectType.Disarm, StatusEffectType.Fear, StatusEffectType.Charm,
+                           StatusEffectType.Sleep];
+    const dotEffects = [StatusEffectType.Poison, StatusEffectType.Burn, StatusEffectType.Bleed];
+    const buffEffects = [StatusEffectType.Shield, StatusEffectType.Regeneration, StatusEffectType.Enrage,
+                        StatusEffectType.Frenzy, StatusEffectType.Fortify, StatusEffectType.Haste,
+                        StatusEffectType.Invisibility, StatusEffectType.Incorporeal];
+    const debuffEffects = [StatusEffectType.Slow, StatusEffectType.ArmorBreak, StatusEffectType.Weakened,
+                          StatusEffectType.Vulnerable, StatusEffectType.Disease, StatusEffectType.Curse,
+                          StatusEffectType.Terror, StatusEffectType.Marked];
+
+    if (controlEffects.includes(statusType)) return 'control';
+    if (dotEffects.includes(statusType)) return 'dot';
+    if (buffEffects.includes(statusType)) return 'buff';
+    if (debuffEffects.includes(statusType)) return 'debuff';
+    return 'special';
+  }
+
+  /**
+   * Check if unit is stunned/disabled (cannot act)
+   */
+  private isUnitDisabled(unit: BattleUnit): boolean {
+    return unit.statusEffects.some(e =>
+      e.statusType === StatusEffectType.Stun ||
+      e.statusType === StatusEffectType.Sleep ||
+      e.statusType === StatusEffectType.Fear
+    );
+  }
+
+  /**
    * Process one tick of combat
    * Advances all unit cooldowns and triggers actions for units at 100%
    */
   private processTick(): void {
     this.state.tick++;
+
+    // Process status effects first (DoT, expiration, etc.)
+    this.processStatusEffects();
+
+    // Check if battle ended from status effects
+    if (this.checkBattleEnd()) {
+      return;
+    }
 
     // Get all alive units
     const allUnits = [...this.state.heroes, ...this.state.enemies].filter(u => u.isAlive);
@@ -266,6 +434,13 @@ export class BattleSimulator {
     // Process each ready unit's action
     for (const attacker of readyUnits) {
       if (!attacker.isAlive) continue;
+
+      // Check if unit is disabled (stunned, sleeping, etc.)
+      if (this.isUnitDisabled(attacker)) {
+        // Skip turn but reset cooldown
+        attacker.cooldown = 0;
+        continue;
+      }
 
       // Check if battle is already over
       if (this.checkBattleEnd()) {
@@ -297,9 +472,49 @@ export class BattleSimulator {
       }
 
       // In range - attack!
-      const baseDamage = attacker.stats.damage;
+      // Check for evasion first
+      const evasionRoll = Math.random();
+      const hitChance = attacker.stats.accuracy || 0.95;
+      const evasionChance = target.stats.evasion || 0.05;
+      const finalEvasionChance = Math.max(0, Math.min(0.95, evasionChance - (1 - hitChance)));
+
+      if (evasionRoll < finalEvasionChance) {
+        // Attack evaded!
+        this.addEvent(BattleEventType.Evaded, {
+          attacker: attacker.name,
+          attackerId: attacker.id,
+          target: target.name,
+          targetId: target.id,
+        });
+
+        // Reset cooldown after missing
+        attacker.cooldown = 0;
+        continue;
+      }
+
+      // Calculate damage
+      let baseDamage = attacker.stats.damage;
       const defense = target.stats.defense || 0;
-      const damage = Math.max(1, baseDamage - defense * 0.5);
+      const penetration = attacker.stats.penetration || 0;
+
+      // Apply armor penetration
+      const effectiveDefense = defense * (1 - penetration);
+
+      // Check for critical hit
+      const critRoll = Math.random();
+      const isCrit = critRoll < (attacker.stats.critChance || 0.1);
+
+      if (isCrit) {
+        baseDamage *= attacker.stats.critDamage || 1.5;
+        this.addEvent(BattleEventType.CriticalHit, {
+          attacker: attacker.name,
+          attackerId: attacker.id,
+          target: target.name,
+          targetId: target.id,
+        });
+      }
+
+      const damage = Math.max(1, baseDamage - effectiveDefense * 0.5);
 
       // Apply damage
       target.stats.hp = Math.max(0, target.stats.hp - damage);
@@ -309,6 +524,7 @@ export class BattleSimulator {
         attackerId: attacker.id,
         target: target.name,
         targetId: target.id,
+        isCrit,
       });
 
       this.addEvent(BattleEventType.Damage, {
@@ -317,6 +533,18 @@ export class BattleSimulator {
         damage: Math.floor(damage),
         remainingHp: Math.floor(target.stats.hp),
       });
+
+      // Apply lifesteal
+      if (attacker.stats.lifesteal && attacker.stats.lifesteal > 0) {
+        const healAmount = damage * attacker.stats.lifesteal;
+        attacker.stats.hp = Math.min(attacker.baseStats.maxHp, attacker.stats.hp + healAmount);
+        this.addEvent(BattleEventType.Heal, {
+          unit: attacker.name,
+          unitId: attacker.id,
+          amount: Math.floor(healAmount),
+          source: 'lifesteal',
+        });
+      }
 
       // Reset cooldown after attacking
       attacker.cooldown = 0;

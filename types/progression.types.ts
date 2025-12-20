@@ -1,4 +1,4 @@
-import { Hero, Item, Difficulty } from './core.types';
+import { Hero, Item, ItemInstance, Difficulty } from './core.types';
 
 // Screen types for navigation
 export enum ScreenType {
@@ -64,7 +64,7 @@ export interface CampaignProgress {
 export interface GameState {
   player: PlayerData;
   roster: Hero[];
-  inventory: Item[];
+  inventory: ItemInstance[];
   campaign: CampaignProgress;
   unlockedFeatures: Set<string>;
   currentScreen: ScreenType;

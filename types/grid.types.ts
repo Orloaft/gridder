@@ -40,6 +40,7 @@ export interface GridHero extends BaseGridOccupant {
   heroInstanceId?: string;
   onDragStart?: () => void;
   onDrop?: (heroId: string) => void;
+  onItemDrop?: (itemId: string) => void; // For equipping items
   onClick?: () => void;
 }
 
