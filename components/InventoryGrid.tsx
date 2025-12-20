@@ -72,7 +72,7 @@ export const InventoryGrid = forwardRef<HTMLDivElement, InventoryGridProps>(
   return (
     <div
       ref={ref}
-      className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 border-2 border-gray-700 rounded-lg p-4"
+      className="h-full bg-gradient-to-br from-gray-900/90 to-gray-800/90 border-2 border-gray-700 rounded-lg p-4 flex flex-col"
     >
       <h2 className="text-lg font-bold text-white mb-3 text-center">
         Inventory ({inventory.length})
@@ -80,10 +80,9 @@ export const InventoryGrid = forwardRef<HTMLDivElement, InventoryGridProps>(
 
       {/* Single Grid Container with Player Stats + Items */}
       <div
-        className="relative"
+        className="relative flex-1"
         style={{
           width: cellSize * cols,
-          height: cellSize * rows,
         }}
       >
         {/* Grid Background */}

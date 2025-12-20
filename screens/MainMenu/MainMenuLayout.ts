@@ -18,64 +18,28 @@ export function createMainMenuLayout(
   };
   const occupants: AnyGridOccupant[] = [];
 
-  // Row 3: Main menu buttons (buttons stagger from 0.1s)
+  // Row 3: Campaign button
   occupants.push({
     id: 'btn-campaign',
     type: GridOccupantType.Button,
-    position: { row: 3, col: 2 },
+    position: { row: 3, col: 3 },
     label: 'Campaign',
     icon: generateButtonIcon('campaign'),
     variant: 'primary',
-    onClick: () => navigate(ScreenType.CampaignMap),
+    onClick: () => navigate(ScreenType.LocationMap),
     animationDelay: 0.1,
   });
 
-  occupants.push({
-    id: 'btn-heroes',
-    type: GridOccupantType.Button,
-    position: { row: 3, col: 5 },
-    label: 'Heroes',
-    icon: generateButtonIcon('heroes'),
-    variant: 'primary',
-    onClick: () => navigate(ScreenType.HeroRoster),
-    animationDelay: 0.2,
-  });
-
-  // Row 4: Shop and Inventory
-  occupants.push({
-    id: 'btn-shop',
-    type: GridOccupantType.Button,
-    position: { row: 4, col: 2 },
-    label: 'Shop',
-    icon: generateButtonIcon('shop'),
-    variant: 'primary',
-    onClick: () => navigate(ScreenType.Shop),
-    animationDelay: 0.3,
-  });
-
-  occupants.push({
-    id: 'btn-inventory',
-    type: GridOccupantType.Button,
-    position: { row: 4, col: 5 },
-    label: 'Inventory',
-    icon: generateButtonIcon('inventory'),
-    variant: 'secondary',
-    onClick: () => {
-      console.log('Inventory not implemented yet');
-    },
-    animationDelay: 0.4,
-  });
-
-  // Row 5: Settings
+  // Row 4: Settings button
   occupants.push({
     id: 'btn-settings',
     type: GridOccupantType.Button,
-    position: { row: 5, col: 2 },
+    position: { row: 4, col: 3 },
     label: 'Settings',
     icon: generateButtonIcon('settings'),
     variant: 'secondary',
     onClick: () => navigate(ScreenType.Settings),
-    animationDelay: 0.5,
+    animationDelay: 0.2,
   });
 
   return occupants;

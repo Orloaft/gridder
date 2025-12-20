@@ -4,12 +4,15 @@ import { CAMPAIGN_STAGES, isStageUnlocked } from '@/data/stages';
 import { generateButtonIcon } from '@/utils/generatePlaceholder';
 import { ICON_PATHS } from '@/utils/iconPaths';
 import { Difficulty } from '@/types/core.types';
+import { getLocationById } from '@/data/locations';
 
 export function createCampaignMapLayout(
   completedStages: Set<number>,
   _navigate: (screen: ScreenType) => void,
   onStageSelect: (stageId: number) => void,
-  selectedStageId: number | null
+  selectedStageId: number | null,
+  selectedLocationId: string | null,
+  onStageHover?: (stageId: number | null) => void
 ): AnyGridOccupant[] {
   // Use the global transition-aware navigate function
   const navigate = (screen: ScreenType) => {
@@ -21,55 +24,53 @@ export function createCampaignMapLayout(
   };
   const occupants: AnyGridOccupant[] = [];
 
-  // Row 0: Back button and resources display
+  // Back button in bottom right corner (row 7, col 7)
   occupants.push({
     id: 'btn-back',
     type: GridOccupantType.Button,
-    position: { row: 0, col: 0 },
+    position: { row: 7, col: 7 },
     label: 'Back',
     icon: generateButtonIcon('back'),
     variant: 'secondary',
-    onClick: () => navigate(ScreenType.MainMenu),
+    onClick: () => navigate(ScreenType.LocationMap),
     animationDelay: 0.1,
   });
 
-  // Stage nodes in a path layout (15 stages across 8x8 grid)
-  // Create a winding path through the grid
-  const stagePositions = [
-    // Row 1-2: Stages 1-4
-    { row: 1, col: 1 }, // Stage 1
-    { row: 1, col: 3 }, // Stage 2
-    { row: 1, col: 5 }, // Stage 3
-    { row: 2, col: 6 }, // Stage 4
+  // Filter stages by selected location
+  const location = selectedLocationId ? getLocationById(selectedLocationId) : null;
+  const locationStages = location?.stageRange
+    ? CAMPAIGN_STAGES.filter(
+        (stage) => stage.id >= location.stageRange!.start && stage.id <= location.stageRange!.end
+      )
+    : CAMPAIGN_STAGES;
 
-    // Row 3-4: Stages 5-8
-    { row: 3, col: 6 }, // Stage 5 (boss)
-    { row: 4, col: 5 }, // Stage 6
-    { row: 4, col: 3 }, // Stage 7
-    { row: 4, col: 1 }, // Stage 8
+  // Display stages in 8x8 grid layout
+  // For location-specific view: 8 stages arranged in one row
+  // For all stages view: 64 stages in full grid
+  locationStages.forEach((stage, index) => {
+    // Calculate grid position: stages 1-8 in row 0, stages 9-16 in row 1, etc.
+    let row = Math.floor(index / 8);
+    let col = index % 8;
 
-    // Row 5-6: Stages 9-12
-    { row: 5, col: 2 }, // Stage 9
-    { row: 6, col: 3 }, // Stage 10 (boss)
-    { row: 6, col: 5 }, // Stage 11
-    { row: 5, col: 6 }, // Stage 12
+    // Special case: stage 64 (index 63) goes to position (7, 6) instead of (7, 7)
+    if (index === 63) {
+      row = 7;
+      col = 6;
+    }
+    // Shift stage 63 (index 62) to make room - it goes to col 5 instead of col 6
+    else if (index === 62) {
+      row = 7;
+      col = 5;
+    }
 
-    // Row 7: Stages 13-15
-    { row: 7, col: 5 }, // Stage 13
-    { row: 7, col: 3 }, // Stage 14
-    { row: 7, col: 1 }, // Stage 15 (final boss)
-  ];
+    const position = { row, col };
 
-  CAMPAIGN_STAGES.forEach((stage, index) => {
-    if (index >= stagePositions.length) return;
-
-    const position = stagePositions[index];
     const isUnlocked = isStageUnlocked(stage.id, completedStages);
     const isCompleted = completedStages.has(stage.id);
     const isSelected = selectedStageId === stage.id;
 
     // Determine icon based on stage state
-    let icon = ICON_PATHS.lock; // Locked
+    let icon: string = ICON_PATHS.lock; // Locked
     let variant: 'primary' | 'secondary' | 'danger' = 'secondary';
 
     if (isCompleted) {
@@ -78,7 +79,7 @@ export function createCampaignMapLayout(
     } else if (isUnlocked) {
       // Icon based on difficulty
       if (stage.difficulty === Difficulty.Boss) {
-        icon = ICON_PATHS.skull; // Boss stage
+        icon = ICON_PATHS.skull; // Boss stage (every 8th stage)
         variant = 'danger';
       } else {
         icon = ICON_PATHS.compass; // Available stage
@@ -104,7 +105,9 @@ export function createCampaignMapLayout(
           }
         }
       },
-      animationDelay: 0.2 + index * 0.05,
+      onMouseEnter: onStageHover ? () => onStageHover(stage.id) : undefined,
+      onMouseLeave: onStageHover ? () => onStageHover(null) : undefined,
+      animationDelay: 0.05 + index * 0.02, // Faster animation for 64 stages
     });
   });
 

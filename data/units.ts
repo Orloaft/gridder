@@ -1,5 +1,5 @@
 // Hero and Enemy unit templates
-import { HeroTemplate, EnemyTemplate, Rarity, UnitStats, Ability, AbilityType, StatusEffectType, AIPattern } from '@/types/core.types';
+import { HeroTemplate, EnemyTemplate, Rarity, UnitStats, Ability, AbilityType, StatusEffectType, AIPattern, StatGrowth } from '@/types/core.types';
 import { ICON_PATHS } from '@/utils/iconPaths';
 
 // Base stats template helper
@@ -23,7 +23,17 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     id: 'blood_knight',
     class: 'Blood Knight',
     name: 'Blood Knight',
-    baseStats: createStats(200, 50, 100),
+    baseStats: createStats(70, 18, 90),
+    statGrowth: {
+      hp: 8,
+      damage: 2.5,
+      speed: 1.2,
+      defense: 0.5,
+      critChance: 0.002,
+      critDamage: 0.01,
+      evasion: 0.001,
+      accuracy: 0.001,
+    },
     abilities: [
       {
         id: 'blood_strike',
@@ -55,7 +65,17 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     id: 'shadow_stalker',
     class: 'Shadow Stalker',
     name: 'Shadow Stalker',
-    baseStats: createStats(120, 70, 150),
+    baseStats: createStats(42, 25, 140),
+    statGrowth: {
+      hp: 5,
+      damage: 3.5,
+      speed: 1.8,
+      defense: 0.3,
+      critChance: 0.004,
+      critDamage: 0.015,
+      evasion: 0.002,
+      accuracy: 0.001,
+    },
     abilities: [
       {
         id: 'backstab',
@@ -82,7 +102,17 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     id: 'plague_doctor',
     class: 'Plague Doctor',
     name: 'Plague Doctor',
-    baseStats: createStats(150, 30, 90),
+    baseStats: createStats(52, 12, 85),
+    statGrowth: {
+      hp: 6.5,
+      damage: 1.8,
+      speed: 1.0,
+      defense: 0.4,
+      critChance: 0.001,
+      critDamage: 0.008,
+      evasion: 0.001,
+      accuracy: 0.001,
+    },
     abilities: [
       {
         id: 'healing_mist',
@@ -109,7 +139,17 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     id: 'necromancer',
     class: 'Necromancer',
     name: 'Necromancer',
-    baseStats: createStats(100, 80, 80),
+    baseStats: createStats(35, 28, 75),
+    statGrowth: {
+      hp: 4.5,
+      damage: 4.0,
+      speed: 1.0,
+      defense: 0.3,
+      critChance: 0.003,
+      critDamage: 0.012,
+      evasion: 0.001,
+      accuracy: 0.002,
+    },
     abilities: [
       {
         id: 'dark_bolt',
@@ -136,7 +176,17 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     id: 'witch_hunter',
     class: 'Witch Hunter',
     name: 'Witch Hunter',
-    baseStats: createStats(140, 60, 120),
+    baseStats: createStats(50, 22, 110),
+    statGrowth: {
+      hp: 6.0,
+      damage: 3.0,
+      speed: 1.5,
+      defense: 0.4,
+      critChance: 0.003,
+      critDamage: 0.012,
+      evasion: 0.001,
+      accuracy: 0.002,
+    },
     abilities: [
       {
         id: 'precise_shot',
@@ -163,7 +213,17 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     id: 'flesh_golem',
     class: 'Flesh Golem',
     name: 'Flesh Golem',
-    baseStats: createStats(300, 40, 60),
+    baseStats: createStats(105, 15, 55),
+    statGrowth: {
+      hp: 12,
+      damage: 2.0,
+      speed: 0.8,
+      defense: 0.8,
+      critChance: 0.001,
+      critDamage: 0.005,
+      evasion: 0.0005,
+      accuracy: 0.001,
+    },
     abilities: [
       {
         id: 'taunt',
@@ -191,24 +251,18 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     id: 'quester',
     class: 'Quester',
     name: 'Adventurer',
-    baseStats: createStats(160, 55, 110),
-    abilities: [
-      {
-        id: 'heroic_strike',
-        name: 'Heroic Strike',
-        type: AbilityType.Offensive,
-        description: 'Balanced attack',
-        cooldown: 3,
-        currentCooldown: 0,
-        effects: [
-          {
-            type: 'damage',
-            value: 70,
-            targetType: 'enemy',
-          },
-        ],
-      },
-    ],
+    baseStats: createStats(55, 20, 100),
+    statGrowth: {
+      hp: 7.0,
+      damage: 2.8,
+      speed: 1.3,
+      defense: 0.4,
+      critChance: 0.002,
+      critDamage: 0.01,
+      evasion: 0.001,
+      accuracy: 0.001,
+    },
+    abilities: [], // No starting abilities - will choose on level up
     spritePath: ICON_PATHS.quester,
     rarity: Rarity.Common,
     description: 'Versatile adventurer ready for any challenge',
@@ -222,15 +276,25 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     name: 'Ironheart',
     title: 'The Unyielding',
     baseStats: {
-      hp: 250,
-      maxHp: 250,
-      damage: 40,
-      speed: 85,
+      hp: 88,
+      maxHp: 88,
+      damage: 15,
+      speed: 80,
       defense: 30,
       critChance: 0.05,
       critDamage: 1.3,
       evasion: 0.02,
       accuracy: 0.95,
+    },
+    statGrowth: {
+      hp: 10,
+      damage: 2.2,
+      speed: 1.0,
+      defense: 1.0,
+      critChance: 0.001,
+      critDamage: 0.006,
+      evasion: 0.0005,
+      accuracy: 0.001,
     },
     abilities: [
       {
@@ -282,15 +346,25 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     name: 'Shadow',
     title: 'The Phantom Blade',
     baseStats: {
-      hp: 140,
-      maxHp: 140,
-      damage: 85,
-      speed: 140,
+      hp: 50,
+      maxHp: 50,
+      damage: 30,
+      speed: 130,
       defense: 10,
       critChance: 0.35,
       critDamage: 2.2,
       evasion: 0.20,
       accuracy: 0.95,
+    },
+    statGrowth: {
+      hp: 5.5,
+      damage: 4.2,
+      speed: 1.8,
+      defense: 0.3,
+      critChance: 0.005,
+      critDamage: 0.018,
+      evasion: 0.003,
+      accuracy: 0.001,
     },
     abilities: [
       {
@@ -355,6 +429,37 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
 
 // Enemy Templates
 export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
+  // TUTORIAL TIER - Very weak critters for first few stages
+  giant_spider: {
+    id: 'giant_spider',
+    name: 'Giant Spider',
+    type: 'Beast',
+    baseStats: createStats(20, 8, 100),
+    abilities: [],
+    spritePath: ICON_PATHS.plagueRat, // Using rat icon as placeholder
+    description: 'Common forest spider',
+  },
+
+  small_rat: {
+    id: 'small_rat',
+    name: 'Small Rat',
+    type: 'Beast',
+    baseStats: createStats(15, 6, 120),
+    abilities: [],
+    spritePath: ICON_PATHS.plagueRat,
+    description: 'Tiny scavenging rodent',
+  },
+
+  wild_bat: {
+    id: 'wild_bat',
+    name: 'Wild Bat',
+    type: 'Beast',
+    baseStats: createStats(12, 10, 140),
+    abilities: [],
+    spritePath: ICON_PATHS.bat,
+    description: 'Fast but fragile cave bat',
+  },
+
   plague_rat: {
     id: 'plague_rat',
     name: 'Plague Rat',
@@ -597,6 +702,114 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
   },
 };
 
+// Learnable abilities for heroes
+export const LEARNABLE_ABILITIES: Record<string, Ability> = {
+  // QUESTER ABILITIES - Choose one on levelup
+  blade_cleave: {
+    id: 'blade_cleave',
+    name: 'Blade Cleave',
+    type: AbilityType.Offensive,
+    description: 'Powerful sweeping attack that hits multiple enemies in an arc',
+    cooldown: 4,
+    currentCooldown: 0,
+    effects: [
+      {
+        type: 'damage',
+        value: 85,
+        targetType: 'aoe',
+        radius: 1, // Hits adjacent enemies
+      },
+    ],
+    animationType: 'cleave', // For animation system
+  },
+
+  fireball: {
+    id: 'fireball',
+    name: 'Fireball',
+    type: AbilityType.Offensive,
+    description: 'Hurl a flaming projectile that explodes on impact, dealing damage and burning enemies',
+    cooldown: 5,
+    currentCooldown: 0,
+    effects: [
+      {
+        type: 'damage',
+        value: 100,
+        targetType: 'enemy',
+      },
+      {
+        type: 'status',
+        statusType: StatusEffectType.Burn,
+        duration: 3,
+        targetType: 'enemy',
+        damagePerTick: 10,
+      },
+    ],
+    animationType: 'projectile', // For animation system
+  },
+
+  rallying_cry: {
+    id: 'rallying_cry',
+    name: 'Rallying Cry',
+    type: AbilityType.Support,
+    description: 'Inspire nearby allies, boosting their damage and speed',
+    cooldown: 6,
+    currentCooldown: 0,
+    effects: [
+      {
+        type: 'buff',
+        duration: 3,
+        targetType: 'allAllies',
+        statModifier: {
+          stat: 'damage',
+          value: 20,
+          isPercent: true,
+        },
+      },
+      {
+        type: 'buff',
+        duration: 3,
+        targetType: 'allAllies',
+        statModifier: {
+          stat: 'speed',
+          value: 15,
+          isPercent: true,
+        },
+      },
+    ],
+    animationType: 'buff', // For animation system
+  },
+};
+
+// Map of which abilities each hero can learn
+export const HERO_LEARNABLE_ABILITIES: Record<string, string[]> = {
+  quester: ['blade_cleave', 'fireball', 'rallying_cry'],
+};
+
+// Helper function to calculate XP needed for a level
+function calculateMaxExperience(level: number): number {
+  // Exponential curve: each level requires more XP
+  // Level 1->2: 100 XP, Level 2->3: 150 XP, Level 3->4: 225 XP, etc.
+  return Math.floor(100 * Math.pow(1.5, level - 1));
+}
+
+// Helper function to get hero cost in gems based on rarity/tier
+export function getHeroGemCost(rarity: Rarity): number {
+  switch (rarity) {
+    case Rarity.Common:
+      return 10; // Common heroes cost 10 gems
+    case Rarity.Uncommon:
+      return 25; // Uncommon heroes cost 25 gems
+    case Rarity.Rare:
+      return 50; // Rare heroes cost 50 gems
+    case Rarity.Epic:
+      return 100; // Epic heroes cost 100 gems
+    case Rarity.Legendary:
+      return 200; // Legendary heroes cost 200 gems
+    default:
+      return 50; // Default to rare price
+  }
+}
+
 // Helper function to create a hero instance
 export function createHeroInstance(templateId: string, level: number = 1): any {
   const template = HERO_TEMPLATES[templateId];
@@ -609,21 +822,42 @@ export function createHeroInstance(templateId: string, level: number = 1): any {
     instanceId: `${templateId}_${Date.now()}_${Math.random()}`,
     level,
     experience: 0,
+    maxExperience: calculateMaxExperience(level),
     equippedItem: undefined,
     currentStats: { ...template.baseStats },
   };
 }
 
-// Helper function to create an enemy instance
-export function createEnemyInstance(templateId: string): any {
+// Helper function to create an enemy instance with progressive scaling
+export function createEnemyInstance(templateId: string, stageId: number = 1): any {
   const template = ENEMY_TEMPLATES[templateId];
   if (!template) {
     throw new Error(`Enemy template not found: ${templateId}`);
   }
 
+  // Calculate scaling factor based on stage number
+  // Stage 1 = 1.0x (no scaling)
+  // Stage 64 = 1.6x stats
+  // Stage 128 = 2.2x stats
+  // Stage 256 = 3.4x stats
+  // Stage 512 = 6.0x stats (exponential growth)
+  const scalingFactor = 1 + (stageId / 512) * 5.0; // Linear component
+  const exponentialFactor = Math.pow(1.003, stageId - 1); // Exponential component for late game
+  const totalScaling = scalingFactor * exponentialFactor;
+
+  // Apply scaling to stats
+  const scaledStats = { ...template.baseStats };
+  scaledStats.hp = Math.floor(scaledStats.hp * totalScaling);
+  scaledStats.maxHp = Math.floor(scaledStats.maxHp * totalScaling);
+  scaledStats.damage = Math.floor(scaledStats.damage * totalScaling);
+  scaledStats.defense = Math.floor(scaledStats.defense * (1 + (totalScaling - 1) * 0.5)); // Defense scales slower
+
+  // Speed increases slightly but caps at reasonable values
+  scaledStats.speed = Math.floor(scaledStats.speed * (1 + (totalScaling - 1) * 0.2));
+
   return {
     ...template,
     instanceId: `${templateId}_${Date.now()}_${Math.random()}`,
-    currentStats: { ...template.baseStats },
+    currentStats: scaledStats,
   };
 }

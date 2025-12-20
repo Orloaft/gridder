@@ -9,6 +9,7 @@ export interface GameGridProps {
   cols: number;
   cellSize: number;
   occupants: AnyGridOccupant[];
+  zoom?: number; // Zoom level (1.0 = normal, 0.5 = 50%, etc.)
   onOccupantClick?: (occupant: AnyGridOccupant) => void;
   onEmptyCellClick?: (position: GridPosition) => void;
   onUnitHover?: (occupant: AnyGridOccupant | null) => void;
@@ -21,6 +22,7 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
       cols,
       cellSize,
       occupants,
+      zoom = 1.0,
       onOccupantClick,
       onEmptyCellClick,
       onUnitHover,
@@ -48,10 +50,11 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
 
   return (
     <div
-      className="relative"
+      className="relative transition-transform duration-300 ease-out origin-center"
       style={{
         width: cols * cellSize,
         height: rows * cellSize,
+        transform: `scale(${zoom})`,
         backgroundImage: 'url(/gridbg.png)',
         backgroundSize: 'cover',
         backgroundPosition: 'center',

@@ -61,11 +61,19 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
     if (buttonRef.current && !button.disabled) {
       animateButtonHover(buttonRef.current);
     }
+    // Call custom hover callback if provided
+    if (button.onMouseEnter) {
+      button.onMouseEnter();
+    }
   };
 
   const handleMouseLeave = () => {
     if (buttonRef.current && !button.disabled) {
       animateButtonHoverOut(buttonRef.current);
+    }
+    // Call custom hover callback if provided
+    if (button.onMouseLeave) {
+      button.onMouseLeave();
     }
   };
 
@@ -97,7 +105,7 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       disabled={button.disabled}
-      className={`relative w-full h-full bg-gradient-to-br ${baseStyles} border-2 rounded-lg overflow-hidden shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
+      className={`relative w-full h-full bg-gradient-to-br ${baseStyles} border-2 rounded-lg overflow-hidden shadow-lg cursor-pointer disabled:cursor-not-allowed`}
       style={{ opacity: 0, transform: 'scale(0)' }}
     >
       {/* Icon fills entire tile */}
@@ -111,6 +119,10 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
               className="object-contain pixelated"
               style={{ imageRendering: 'pixelated' }}
             />
+            {/* Dark overlay for disabled buttons */}
+            {button.disabled && (
+              <div className="absolute inset-0 bg-black/70" />
+            )}
           </div>
         ) : button.icon ? (
           <div style={{ fontSize: cellSize * 0.7 }}>{button.icon}</div>

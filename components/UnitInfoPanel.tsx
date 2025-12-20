@@ -38,8 +38,18 @@ export function UnitInfoPanel({ unit, hoveredItem, roster, inventory, width = 32
 
   const isImageSprite = unit.spritePath?.startsWith('/icons/');
 
-  // Get abilities from template
-  const abilities: Ability[] = unitData?.abilities || [];
+  // Get hero data if this is a hero
+  let equippedItem: ItemInstance | null = null;
+  let heroData: Hero | undefined = undefined;
+  if (isHero && (unit as GridHero).heroInstanceId) {
+    heroData = roster.find(h => h.instanceId === (unit as GridHero).heroInstanceId);
+    if (heroData?.equippedItem) {
+      equippedItem = inventory.find(i => i.instanceId === heroData.equippedItem) || null;
+    }
+  }
+
+  // Get abilities - use hero's actual abilities if it's a hero, otherwise use template
+  const abilities: Ability[] = heroData?.abilities || unitData?.abilities || [];
 
   // Get stats (we'll need to enhance GridHero/GridEnemy to include full stats later)
   const stats: Partial<UnitStats> = {
@@ -55,15 +65,6 @@ export function UnitInfoPanel({ unit, hoveredItem, roster, inventory, width = 32
     penetration: unitData?.baseStats?.penetration,
     lifesteal: unitData?.baseStats?.lifesteal,
   };
-
-  // Get equipped item if this is a hero
-  let equippedItem: ItemInstance | null = null;
-  if (isHero && (unit as GridHero).heroInstanceId) {
-    const hero = roster.find(h => h.instanceId === (unit as GridHero).heroInstanceId);
-    if (hero?.equippedItem) {
-      equippedItem = inventory.find(i => i.instanceId === hero.equippedItem) || null;
-    }
-  }
 
   return (
     <div className={`h-full bg-gradient-to-br ${
@@ -105,6 +106,22 @@ export function UnitInfoPanel({ unit, hoveredItem, roster, inventory, width = 32
           )}
         </div>
       </div>
+
+      {/* Level and XP Bar (heroes only) */}
+      {isHero && heroData && (
+        <div className="mb-4">
+          <div className="flex justify-between text-xs text-gray-300 mb-1">
+            <span className="font-semibold text-yellow-400">Level {heroData.level}</span>
+            <span>{heroData.experience} / {heroData.maxExperience} XP</span>
+          </div>
+          <div className="w-full bg-black/60 rounded-full h-2 border border-gray-600">
+            <div
+              className="h-full rounded-full transition-all bg-gradient-to-r from-yellow-500 to-yellow-300"
+              style={{ width: `${(heroData.experience / heroData.maxExperience) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* HP Bar */}
       <div className="mb-4">

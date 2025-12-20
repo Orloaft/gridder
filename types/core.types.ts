@@ -126,6 +126,20 @@ export interface AbilityEffect {
   };
 }
 
+// Stat growth per level
+export interface StatGrowth {
+  hp: number;
+  damage: number;
+  speed: number;
+  defense: number;
+  critChance: number;
+  critDamage: number;
+  evasion: number;
+  accuracy: number;
+  penetration?: number;
+  lifesteal?: number;
+}
+
 // Hero template (base data)
 export interface HeroTemplate {
   id: string;
@@ -133,6 +147,7 @@ export interface HeroTemplate {
   name: string;
   title?: string; // Optional title/descriptor (e.g., "The Unyielding")
   baseStats: UnitStats;
+  statGrowth: StatGrowth; // Stats gained per level
   abilities: Ability[]; // Should always have 2 abilities: 1 offensive + 1 support/defensive
   spritePath: string;
   rarity: Rarity;
@@ -145,6 +160,7 @@ export interface Hero extends HeroTemplate {
   instanceId: string;
   level: number;
   experience: number;
+  maxExperience: number; // XP needed for next level
   equippedItem?: string; // Single item instance ID (only one item allowed)
   currentStats: UnitStats; // Modified by items and level
 }

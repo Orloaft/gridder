@@ -1,0 +1,151 @@
+// Campaign stage definitions
+// 8x8 grid = 64 missions total
+// Each row (8 missions) increases team size by 1
+// Row 0 (stages 1-8): 1 hero slot
+// Row 1 (stages 9-16): 2 hero slots
+// Row 2 (stages 17-24): 3 hero slots
+// ... up to Row 7 (stages 57-64): 8 hero slots
+
+import { Stage } from '@/types/progression.types';
+import { Difficulty } from '@/types/core.types';
+
+// Helper to generate stage data
+function generateStage(
+  id: number,
+  name: string,
+  difficulty: Difficulty,
+  enemies: string[],
+  playerSlots: number,
+  enemySlots: number,
+  goldReward: number
+): Stage {
+  return {
+    id,
+    name,
+    difficulty,
+    enemies,
+    playerSlots,
+    enemySlots,
+    rewards: {
+      gold: goldReward,
+      experience: goldReward * 0.8,
+      recruitChance: difficulty === Difficulty.Boss ? 0.6 : 0.3,
+    },
+    unlockRequirement: id === 1 ? undefined : id - 1,
+  };
+}
+
+export const CAMPAIGN_STAGES: Stage[] = [
+  // ROW 0 (Stages 1-8): 1 Hero Slot
+  generateStage(1, 'First Steps', Difficulty.Tutorial, ['plague_rat'], 1, 1, 20),
+  generateStage(2, 'Rat Problem', Difficulty.Tutorial, ['plague_rat', 'plague_rat'], 1, 2, 25),
+  generateStage(3, 'Pest Control', Difficulty.Tutorial, ['plague_rat', 'plague_rat'], 1, 2, 30),
+  generateStage(4, 'Ghostly Visit', Difficulty.Easy, ['wraith'], 1, 1, 35),
+  generateStage(5, 'Dual Threat', Difficulty.Easy, ['plague_rat', 'wraith'], 1, 2, 40),
+  generateStage(6, 'Slime Encounter', Difficulty.Easy, ['slime'], 1, 1, 45),
+  generateStage(7, 'Growing Challenge', Difficulty.Easy, ['slime', 'plague_rat'], 1, 2, 50),
+  generateStage(8, 'Row 1 Boss', Difficulty.Boss, ['bone_construct', 'wraith'], 1, 2, 100),
+
+  // ROW 1 (Stages 9-16): 2 Hero Slots
+  generateStage(9, 'Duo Begins', Difficulty.Easy, ['plague_rat', 'plague_rat', 'plague_rat'], 2, 3, 60),
+  generateStage(10, 'Ghost Pair', Difficulty.Easy, ['wraith', 'wraith'], 2, 2, 65),
+  generateStage(11, 'Slime Cave', Difficulty.Easy, ['slime', 'slime'], 2, 2, 70),
+  generateStage(12, 'Mixed Forces', Difficulty.Medium, ['wraith', 'slime', 'plague_rat'], 2, 3, 75),
+  generateStage(13, 'Bone Guard', Difficulty.Medium, ['bone_construct', 'plague_rat'], 2, 2, 80),
+  generateStage(14, 'Dark Ambush', Difficulty.Medium, ['wraith', 'wraith', 'slime'], 2, 3, 85),
+  generateStage(15, 'Cultist Rise', Difficulty.Medium, ['cultist', 'wraith'], 2, 2, 90),
+  generateStage(16, 'Row 2 Boss', Difficulty.Boss, ['bone_construct', 'bone_construct', 'wraith'], 2, 3, 150),
+
+  // ROW 2 (Stages 17-24): 3 Hero Slots
+  generateStage(17, 'Triple Threat', Difficulty.Medium, ['cultist', 'wraith', 'slime'], 3, 3, 100),
+  generateStage(18, 'Gargoyle Watch', Difficulty.Medium, ['gargoyle', 'bone_construct'], 3, 2, 110),
+  generateStage(19, 'Shadow Rising', Difficulty.Medium, ['shadow_beast', 'wraith'], 3, 2, 120),
+  generateStage(20, 'Undead March', Difficulty.Medium, ['bone_construct', 'bone_construct', 'wraith'], 3, 3, 130),
+  generateStage(21, 'Cultist Ritual', Difficulty.Hard, ['cultist', 'cultist', 'shadow_beast'], 3, 3, 140),
+  generateStage(22, 'Beast Hunt', Difficulty.Hard, ['shadow_beast', 'gargoyle', 'wraith'], 3, 3, 150),
+  generateStage(23, 'Dark Convergence', Difficulty.Hard, ['cultist', 'bone_construct', 'shadow_beast'], 3, 3, 160),
+  generateStage(24, 'Row 3 Boss', Difficulty.Boss, ['necromancer_boss', 'bone_construct', 'wraith', 'wraith'], 3, 4, 200),
+
+  // ROW 3 (Stages 25-32): 4 Hero Slots
+  generateStage(25, 'Four Champions', Difficulty.Medium, ['wraith', 'wraith', 'slime', 'slime'], 4, 4, 120),
+  generateStage(26, 'Bone Yard', Difficulty.Medium, ['bone_construct', 'bone_construct', 'gargoyle'], 4, 3, 130),
+  generateStage(27, 'Shadow Ambush', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'cultist'], 4, 3, 140),
+  generateStage(28, 'Gargoyle Nest', Difficulty.Hard, ['gargoyle', 'gargoyle', 'bone_construct'], 4, 3, 150),
+  generateStage(29, 'Cultist Army', Difficulty.Hard, ['cultist', 'cultist', 'cultist', 'wraith'], 4, 4, 160),
+  generateStage(30, 'Beast Stampede', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'gargoyle'], 4, 3, 170),
+  generateStage(31, 'Unholy Alliance', Difficulty.Hard, ['necromancer_boss', 'shadow_beast', 'cultist'], 4, 3, 180),
+  generateStage(32, 'Row 4 Boss', Difficulty.Boss, ['necromancer_boss', 'bone_construct', 'bone_construct', 'shadow_beast'], 4, 4, 250),
+
+  // ROW 4 (Stages 33-40): 5 Hero Slots
+  generateStage(33, 'Five Warriors', Difficulty.Hard, ['cultist', 'wraith', 'wraith', 'gargoyle'], 5, 4, 150),
+  generateStage(34, 'Crypt Keepers', Difficulty.Hard, ['bone_construct', 'bone_construct', 'bone_construct', 'wraith'], 5, 4, 160),
+  generateStage(35, 'Shadow Legion', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'cultist', 'cultist'], 5, 4, 170),
+  generateStage(36, 'Stone Guards', Difficulty.Hard, ['gargoyle', 'gargoyle', 'gargoyle', 'bone_construct'], 5, 4, 180),
+  generateStage(37, 'Dark Ritual', Difficulty.Hard, ['necromancer_boss', 'cultist', 'cultist', 'wraith'], 5, 4, 190),
+  generateStage(38, 'Beast Horde', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'shadow_beast', 'gargoyle'], 5, 4, 200),
+  generateStage(39, 'Undead Rising', Difficulty.Hard, ['bone_construct', 'bone_construct', 'wraith', 'wraith', 'wraith'], 5, 5, 210),
+  generateStage(40, 'Row 5 Boss', Difficulty.Boss, ['necromancer_boss', 'necromancer_boss', 'shadow_beast', 'bone_construct'], 5, 4, 300),
+
+  // ROW 5 (Stages 41-48): 6 Hero Slots
+  generateStage(41, 'Six Champions', Difficulty.Hard, ['cultist', 'cultist', 'shadow_beast', 'gargoyle', 'wraith'], 6, 5, 180),
+  generateStage(42, 'Tomb Raiders', Difficulty.Hard, ['bone_construct', 'bone_construct', 'bone_construct', 'gargoyle', 'gargoyle'], 6, 5, 190),
+  generateStage(43, 'Shadow Domain', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'shadow_beast', 'cultist'], 6, 4, 200),
+  generateStage(44, 'Stone Fortress', Difficulty.Hard, ['gargoyle', 'gargoyle', 'gargoyle', 'gargoyle'], 6, 4, 210),
+  generateStage(45, 'Necro Council', Difficulty.Hard, ['necromancer_boss', 'cultist', 'cultist', 'bone_construct', 'wraith'], 6, 5, 220),
+  generateStage(46, 'Beast Swarm', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'shadow_beast', 'shadow_beast'], 6, 4, 230),
+  generateStage(47, 'Death March', Difficulty.Hard, ['bone_construct', 'bone_construct', 'wraith', 'wraith', 'shadow_beast'], 6, 5, 240),
+  generateStage(48, 'Row 6 Boss', Difficulty.Boss, ['necromancer_boss', 'necromancer_boss', 'shadow_beast', 'shadow_beast', 'gargoyle'], 6, 5, 350),
+
+  // ROW 6 (Stages 49-56): 7 Hero Slots
+  generateStage(49, 'Seven Heroes', Difficulty.Hard, ['cultist', 'cultist', 'shadow_beast', 'shadow_beast', 'gargoyle'], 7, 5, 210),
+  generateStage(50, 'Catacombs', Difficulty.Hard, ['bone_construct', 'bone_construct', 'bone_construct', 'wraith', 'wraith', 'wraith'], 7, 6, 220),
+  generateStage(51, 'Shadowlands', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'shadow_beast', 'shadow_beast', 'cultist'], 7, 5, 230),
+  generateStage(52, 'Gargoyle Army', Difficulty.Hard, ['gargoyle', 'gargoyle', 'gargoyle', 'gargoyle', 'gargoyle'], 7, 5, 240),
+  generateStage(53, 'Necro Alliance', Difficulty.Hard, ['necromancer_boss', 'necromancer_boss', 'cultist', 'bone_construct', 'wraith'], 7, 5, 250),
+  generateStage(54, 'Beast Kingdom', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'shadow_beast', 'shadow_beast', 'gargoyle'], 7, 5, 260),
+  generateStage(55, 'Apocalypse', Difficulty.Hard, ['necromancer_boss', 'shadow_beast', 'bone_construct', 'wraith', 'cultist', 'gargoyle'], 7, 6, 270),
+  generateStage(56, 'Row 7 Boss', Difficulty.Boss, ['necromancer_boss', 'necromancer_boss', 'shadow_beast', 'shadow_beast', 'gargoyle', 'bone_construct'], 7, 6, 400),
+
+  // ROW 7 (Stages 57-64): 8 Hero Slots - FINAL ROW
+  generateStage(57, 'Full Force', Difficulty.Hard, ['cultist', 'cultist', 'shadow_beast', 'shadow_beast', 'gargoyle', 'wraith'], 8, 6, 240),
+  generateStage(58, 'Endless Tombs', Difficulty.Hard, ['bone_construct', 'bone_construct', 'bone_construct', 'wraith', 'wraith', 'gargoyle'], 8, 6, 250),
+  generateStage(59, 'Shadow Empire', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'shadow_beast', 'shadow_beast', 'shadow_beast'], 8, 5, 260),
+  generateStage(60, 'Stone Legion', Difficulty.Hard, ['gargoyle', 'gargoyle', 'gargoyle', 'gargoyle', 'gargoyle', 'gargoyle'], 8, 6, 270),
+  generateStage(61, 'Necro Lords', Difficulty.Hard, ['necromancer_boss', 'necromancer_boss', 'necromancer_boss', 'shadow_beast', 'cultist'], 8, 5, 280),
+  generateStage(62, 'Beast Apocalypse', Difficulty.Hard, ['shadow_beast', 'shadow_beast', 'shadow_beast', 'shadow_beast', 'gargoyle', 'gargoyle'], 8, 6, 290),
+  generateStage(63, 'Final Trial', Difficulty.Hard, ['necromancer_boss', 'shadow_beast', 'shadow_beast', 'gargoyle', 'bone_construct', 'cultist', 'wraith'], 8, 7, 300),
+  generateStage(64, 'Ultimate Boss', Difficulty.Boss, ['necromancer_boss', 'necromancer_boss', 'shadow_beast', 'shadow_beast', 'shadow_beast', 'gargoyle', 'bone_construct'], 8, 7, 500),
+];
+
+// Helper functions
+export function getStageById(stageId: number): Stage | undefined {
+  return CAMPAIGN_STAGES.find((stage) => stage.id === stageId);
+}
+
+export function getStagesByDifficulty(difficulty: Difficulty): Stage[] {
+  return CAMPAIGN_STAGES.filter((stage) => stage.difficulty === difficulty);
+}
+
+export function isStageUnlocked(stageId: number, completedStages: Set<number>): boolean {
+  const stage = getStageById(stageId);
+  if (!stage) return false;
+
+  // First stage is always unlocked
+  if (stage.id === 1) return true;
+
+  // Check if unlock requirement is met
+  if (stage.unlockRequirement) {
+    return completedStages.has(stage.unlockRequirement);
+  }
+
+  return false;
+}
+
+export function getNextUnlockedStage(completedStages: Set<number>): number {
+  for (const stage of CAMPAIGN_STAGES) {
+    if (!completedStages.has(stage.id) && isStageUnlocked(stage.id, completedStages)) {
+      return stage.id;
+    }
+  }
+  return CAMPAIGN_STAGES.length; // All stages completed
+}

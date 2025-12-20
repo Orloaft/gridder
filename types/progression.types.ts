@@ -3,6 +3,7 @@ import { Hero, Item, ItemInstance, Difficulty } from './core.types';
 // Screen types for navigation
 export enum ScreenType {
   MainMenu = 'mainMenu',
+  LocationMap = 'locationMap',
   CampaignMap = 'campaignMap',
   PreBattle = 'preBattle',
   Battle = 'battle',
@@ -11,6 +12,7 @@ export enum ScreenType {
   Settings = 'settings',
   Victory = 'victory',
   Defeat = 'defeat',
+  AbilitySelection = 'abilitySelection',
 }
 
 // Stage node for campaign map
@@ -25,7 +27,9 @@ export interface StageNode {
     gold: number;
     experience: number;
     recruitChance: number;
+    gems?: number;
   };
+  isBoss?: boolean;
 }
 
 // Campaign stage definition
@@ -40,8 +44,10 @@ export interface Stage {
     gold: number;
     experience: number;
     recruitChance: number;
+    gems?: number; // Gems awarded for boss stages
   };
   unlockRequirement?: number; // Stage ID that must be completed
+  isBoss?: boolean; // Mark boss stages for gem rewards
 }
 
 // Player progression data

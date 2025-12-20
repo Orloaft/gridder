@@ -1,232 +1,184 @@
-// Campaign stage definitions
+// Procedurally generated campaign stages
+// 8 locations × 64 stages each = 512 stages total
+// Grid expands in later locations (8x8 → 10x10 → 12x12 → 14x14 → 16x16)
+
 import { Stage } from '@/types/progression.types';
 import { Difficulty } from '@/types/core.types';
+import { getLocationByStageId } from './locations';
 
-export const CAMPAIGN_STAGES: Stage[] = [
-  // Tutorial stages (1-2)
-  {
-    id: 1,
-    name: 'The First Steps',
-    difficulty: Difficulty.Tutorial,
-    enemies: ['plague_rat'],
-    playerSlots: 1,
-    enemySlots: 1,
-    rewards: {
-      gold: 25,
-      experience: 20,
-      recruitChance: 0.5,
-    },
-  },
-  {
-    id: 2,
-    name: 'Rat Infestation',
-    difficulty: Difficulty.Tutorial,
-    enemies: ['plague_rat', 'plague_rat', 'plague_rat', 'plague_rat', 'plague_rat', 'plague_rat'],
-    playerSlots: 2,
-    enemySlots: 6,
-    rewards: {
-      gold: 60,
-      experience: 50,
-      recruitChance: 0.4,
-    },
-    unlockRequirement: 1,
-  },
+// Enemy pool by tier (unlock as campaign progresses)
+const ENEMY_TIERS = {
+  tutorial: ['small_rat', 'giant_spider', 'wild_bat'], // Tutorial stages - very weak critters
+  tier1: ['plague_rat', 'wraith', 'slime'], // Stages 9-128
+  tier2: ['bone_construct', 'cultist'], // Stages 65+
+  tier3: ['shadow_beast', 'gargoyle'], // Stages 129+
+  tier4: ['necromancer_boss'], // Stages 193+ (bosses and elite enemies)
+};
 
-  // Early stages (3-5)
-  {
-    id: 3,
-    name: 'Ghostly Encounter',
-    difficulty: Difficulty.Easy,
-    enemies: ['wraith', 'plague_rat'],
-    playerSlots: 2,
-    enemySlots: 2,
-    rewards: {
-      gold: 60,
-      experience: 40,
-      recruitChance: 0.35,
-    },
-    unlockRequirement: 2,
-  },
-  {
-    id: 4,
-    name: 'Slime Cave',
-    difficulty: Difficulty.Easy,
-    enemies: ['slime', 'slime'],
-    playerSlots: 2,
-    enemySlots: 2,
-    rewards: {
-      gold: 75,
-      experience: 50,
-      recruitChance: 0.3,
-    },
-    unlockRequirement: 3,
-  },
-  {
-    id: 5,
-    name: 'Bone Guardian',
-    difficulty: Difficulty.Medium,
-    enemies: ['bone_construct', 'wraith', 'plague_rat'],
-    playerSlots: 2,
-    enemySlots: 3,
-    rewards: {
-      gold: 100,
-      experience: 75,
-      recruitChance: 0.4,
-    },
-    unlockRequirement: 4,
-  },
+// Get available enemies for a given stage and difficulty
+function getAvailableEnemies(stageId: number, difficulty: Difficulty): string[] {
+  // Tutorial difficulty always uses tutorial critters
+  if (difficulty === Difficulty.Tutorial) {
+    return [...ENEMY_TIERS.tutorial];
+  }
 
-  // Mid stages (6-10)
-  {
-    id: 6,
-    name: 'Cultist Ritual',
-    difficulty: Difficulty.Medium,
-    enemies: ['cultist', 'cultist', 'wraith'],
-    playerSlots: 3,
-    enemySlots: 3,
-    rewards: {
-      gold: 125,
-      experience: 90,
-      recruitChance: 0.25,
-    },
-    unlockRequirement: 5,
-  },
-  {
-    id: 7,
-    name: 'Gargoyle Watch',
-    difficulty: Difficulty.Medium,
-    enemies: ['gargoyle', 'bone_construct', 'bone_construct'],
-    playerSlots: 3,
-    enemySlots: 3,
-    rewards: {
-      gold: 150,
-      experience: 110,
-      recruitChance: 0.3,
-    },
-    unlockRequirement: 6,
-  },
-  {
-    id: 8,
-    name: 'Shadow Ambush',
-    difficulty: Difficulty.Hard,
-    enemies: ['shadow_beast', 'wraith', 'wraith', 'cultist'],
-    playerSlots: 3,
-    enemySlots: 4,
-    rewards: {
-      gold: 180,
-      experience: 130,
-      recruitChance: 0.35,
-    },
-    unlockRequirement: 7,
-  },
-  {
-    id: 9,
-    name: 'Undead Horde',
-    difficulty: Difficulty.Hard,
-    enemies: ['bone_construct', 'bone_construct', 'wraith', 'wraith'],
-    playerSlots: 3,
-    enemySlots: 4,
-    rewards: {
-      gold: 200,
-      experience: 150,
-      recruitChance: 0.25,
-    },
-    unlockRequirement: 8,
-  },
-  {
-    id: 10,
-    name: 'Necromancer Lord',
-    difficulty: Difficulty.Boss,
-    enemies: ['necromancer_boss', 'bone_construct', 'wraith', 'wraith', 'wraith'],
-    playerSlots: 3,
-    enemySlots: 5,
-    rewards: {
-      gold: 300,
-      experience: 250,
-      recruitChance: 0.5,
-    },
-    unlockRequirement: 9,
-  },
+  const enemies = [...ENEMY_TIERS.tier1];
 
-  // Advanced stages (11-15)
-  {
-    id: 11,
-    name: 'Dark Forest',
-    difficulty: Difficulty.Hard,
-    enemies: ['shadow_beast', 'shadow_beast', 'gargoyle', 'cultist'],
-    playerSlots: 4,
-    enemySlots: 4,
+  if (stageId >= 65) enemies.push(...ENEMY_TIERS.tier2);
+  if (stageId >= 129) enemies.push(...ENEMY_TIERS.tier3);
+  if (stageId >= 193) enemies.push(...ENEMY_TIERS.tier4);
+
+  return enemies;
+}
+
+// Determine difficulty based on stage position within location
+function getDifficulty(stageId: number, positionInLocation: number): Difficulty {
+  // Every 8th stage (end of each row) is a boss
+  if (positionInLocation % 8 === 0) return Difficulty.Boss;
+
+  // First few stages of location are easier
+  if (positionInLocation <= 8) {
+    return stageId <= 8 ? Difficulty.Tutorial : Difficulty.Easy;
+  }
+
+  // Difficulty scales with progress
+  if (positionInLocation <= 24) return Difficulty.Easy;
+  if (positionInLocation <= 40) return Difficulty.Medium;
+  return Difficulty.Hard;
+}
+
+// Generate enemy composition for a stage
+function generateEnemies(stageId: number, difficulty: Difficulty, enemyCount: number): string[] {
+  const availableEnemies = getAvailableEnemies(stageId, difficulty);
+  const enemies: string[] = [];
+
+  // Tutorial stages use only tutorial critters - no special logic needed
+  if (difficulty === Difficulty.Tutorial) {
+    for (let i = 0; i < enemyCount; i++) {
+      enemies.push(availableEnemies[Math.floor(Math.random() * availableEnemies.length)]);
+    }
+    return enemies;
+  }
+
+  // Bosses always include necromancer_boss if available
+  if (difficulty === Difficulty.Boss && availableEnemies.includes('necromancer_boss')) {
+    const bossCount = Math.min(2, Math.floor(stageId / 128) + 1);
+    for (let i = 0; i < bossCount; i++) {
+      enemies.push('necromancer_boss');
+    }
+    enemyCount -= bossCount;
+  }
+
+  // Fill remaining slots with random enemies (weighted toward stronger enemies in later stages)
+  const tierWeights = stageId < 129 ? [0.5, 0.3, 0.2, 0] :
+                      stageId < 257 ? [0.2, 0.3, 0.4, 0.1] :
+                      [0.1, 0.2, 0.4, 0.3];
+
+  for (let i = 0; i < enemyCount; i++) {
+    const rand = Math.random();
+    let enemyPool: string[];
+
+    if (rand < tierWeights[0]) {
+      enemyPool = ENEMY_TIERS.tier1.filter(e => availableEnemies.includes(e));
+    } else if (rand < tierWeights[0] + tierWeights[1]) {
+      enemyPool = ENEMY_TIERS.tier2.filter(e => availableEnemies.includes(e));
+    } else if (rand < tierWeights[0] + tierWeights[1] + tierWeights[2]) {
+      enemyPool = ENEMY_TIERS.tier3.filter(e => availableEnemies.includes(e));
+    } else {
+      enemyPool = ENEMY_TIERS.tier4.filter(e => availableEnemies.includes(e));
+    }
+
+    if (enemyPool.length > 0) {
+      enemies.push(enemyPool[Math.floor(Math.random() * enemyPool.length)]);
+    } else {
+      // Fallback to any available enemy
+      enemies.push(availableEnemies[Math.floor(Math.random() * availableEnemies.length)]);
+    }
+  }
+
+  return enemies;
+}
+
+// Generate a single stage
+function generateStage(stageId: number): Stage {
+  const location = getLocationByStageId(stageId);
+  if (!location || !location.stageRange) {
+    throw new Error(`No location found for stage ${stageId}`);
+  }
+
+  const positionInLocation = stageId - location.stageRange.start + 1;
+  const rowInLocation = Math.ceil(positionInLocation / 8);
+  const colInLocation = ((positionInLocation - 1) % 8) + 1;
+
+  // Team size based on location's maxTeamSize and current row
+  const maxTeamSize = location.maxTeamSize || 3;
+  const playerSlots = Math.min(maxTeamSize, rowInLocation);
+
+  // Determine difficulty
+  const difficulty = getDifficulty(stageId, positionInLocation);
+
+  // Calculate enemy count (scales with difficulty and stage progress)
+  const baseEnemyCount = playerSlots + (difficulty === Difficulty.Boss ? 1 : 0);
+  const difficultyMultiplier = difficulty === Difficulty.Boss ? 1.5 :
+                               difficulty === Difficulty.Hard ? 1.3 :
+                               difficulty === Difficulty.Medium ? 1.1 : 1.0;
+  const stageMultiplier = 1 + (stageId / 512) * 0.5; // Up to 50% more enemies by end
+  const enemySlots = Math.floor(baseEnemyCount * difficultyMultiplier * stageMultiplier);
+
+  // Generate enemies
+  const enemies = generateEnemies(stageId, difficulty, enemySlots);
+
+  // Calculate rewards (scales with stage and difficulty)
+  const baseGold = 20 + (stageId * 2);
+  const difficultyBonus = difficulty === Difficulty.Boss ? 3 :
+                         difficulty === Difficulty.Hard ? 2 :
+                         difficulty === Difficulty.Medium ? 1.5 : 1;
+  const goldReward = Math.floor(baseGold * difficultyBonus);
+
+  // Generate name
+  const stageNames = {
+    [Difficulty.Tutorial]: ['First Steps', 'Learning Path', 'Practice Run', 'Training Day'],
+    [Difficulty.Easy]: ['Minor Skirmish', 'Patrol Route', 'Scouting Mission', 'Clearing Path'],
+    [Difficulty.Medium]: ['Battle Zone', 'Enemy Stronghold', 'Contested Ground', 'War Path'],
+    [Difficulty.Hard]: ['Death March', 'Elite Force', 'Gauntlet Run', 'Brutal Assault'],
+    [Difficulty.Boss]: [`${location.name} Guardian`, `${location.name} Overlord`, `Floor ${rowInLocation} Boss`],
+  };
+
+  const namePool = stageNames[difficulty] || ['Battle'];
+  const baseName = difficulty === Difficulty.Boss
+    ? `Row ${rowInLocation} Boss`
+    : namePool[Math.floor(Math.random() * namePool.length)];
+  const name = `${baseName} (${stageId})`;
+
+  // Calculate gem rewards for boss stages
+  // Bosses give gems based on which location they're in (every 64 stages = 1 location)
+  const isBoss = difficulty === Difficulty.Boss;
+  const locationNumber = Math.floor((stageId - 1) / 64) + 1; // 1-8 for 8 locations
+  const gemReward = isBoss ? 10 + (locationNumber * 5) : 0; // 15, 20, 25, 30, 35, 40, 45, 50 gems
+
+  return {
+    id: stageId,
+    name,
+    difficulty,
+    enemies,
+    playerSlots,
+    enemySlots,
     rewards: {
-      gold: 250,
-      experience: 200,
-      recruitChance: 0.2,
+      gold: goldReward,
+      experience: Math.floor(goldReward * 0.8),
+      recruitChance: difficulty === Difficulty.Boss ? 0.6 : 0.3,
+      gems: gemReward > 0 ? gemReward : undefined, // Only add gems property if boss
     },
-    unlockRequirement: 10,
-  },
-  {
-    id: 12,
-    name: 'Corrupted Temple',
-    difficulty: Difficulty.Hard,
-    enemies: ['cultist', 'cultist', 'shadow_beast', 'gargoyle', 'wraith'],
-    playerSlots: 4,
-    enemySlots: 5,
-    rewards: {
-      gold: 280,
-      experience: 220,
-      recruitChance: 0.25,
-    },
-    unlockRequirement: 11,
-  },
-  {
-    id: 13,
-    name: 'Bone Yard',
-    difficulty: Difficulty.Hard,
-    enemies: ['bone_construct', 'bone_construct', 'bone_construct', 'gargoyle', 'gargoyle'],
-    playerSlots: 4,
-    enemySlots: 5,
-    rewards: {
-      gold: 320,
-      experience: 240,
-      recruitChance: 0.2,
-    },
-    unlockRequirement: 12,
-  },
-  {
-    id: 14,
-    name: 'Shadow Realm',
-    difficulty: Difficulty.Hard,
-    enemies: ['shadow_beast', 'shadow_beast', 'shadow_beast', 'cultist', 'cultist'],
-    playerSlots: 4,
-    enemySlots: 5,
-    rewards: {
-      gold: 350,
-      experience: 260,
-      recruitChance: 0.3,
-    },
-    unlockRequirement: 13,
-  },
-  {
-    id: 15,
-    name: 'Final Stand',
-    difficulty: Difficulty.Boss,
-    enemies: [
-      'necromancer_boss',
-      'shadow_beast',
-      'shadow_beast',
-      'gargoyle',
-      'bone_construct',
-      'bone_construct',
-    ],
-    playerSlots: 4,
-    enemySlots: 6,
-    rewards: {
-      gold: 500,
-      experience: 400,
-      recruitChance: 0.6,
-    },
-    unlockRequirement: 14,
-  },
-];
+    isBoss,
+    unlockRequirement: stageId === 1 ? undefined : stageId - 1,
+  };
+}
+
+// Generate all 512 stages
+export const CAMPAIGN_STAGES: Stage[] = Array.from(
+  { length: 512 },
+  (_, index) => generateStage(index + 1)
+);
 
 // Helper functions
 export function getStageById(stageId: number): Stage | undefined {

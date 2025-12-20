@@ -4,13 +4,16 @@ import { GameState, ScreenType, PlayerData, CampaignProgress } from '@/types/pro
 import { Hero, Item, ItemInstance } from '@/types/core.types';
 import { AnyGridOccupant } from '@/types/grid.types';
 import { createMainMenuLayout } from '@/screens/MainMenu/MainMenuLayout';
+import { createLocationMapLayout } from '@/screens/LocationMap/LocationMapLayout';
 import { createCampaignMapLayout } from '@/screens/CampaignMap/CampaignMapLayout';
 import { createPreBattleLayout } from '@/screens/PreBattle/PreBattleLayout';
 import { createBattleLayout } from '@/screens/Battle/BattleLayout';
 import { createHeroRosterLayout } from '@/screens/HeroRoster/HeroRosterLayout';
 import { createShopLayout } from '@/screens/Shop/ShopLayout';
-import { createHeroInstance, createEnemyInstance } from '@/data/units';
-import { getStageById } from '@/data/stages';
+import { createAbilitySelectionLayout } from '@/screens/AbilitySelection/AbilitySelectionLayout';
+import { createHeroInstance, createEnemyInstance, getHeroGemCost, LEARNABLE_ABILITIES, HERO_LEARNABLE_ABILITIES } from '@/data/units';
+import { getStageById, getNextUnlockedStage } from '@/data/stages';
+import { getLocationByStageId } from '@/data/locations';
 import { BattleSimulator, BattleState } from '@/systems/BattleSimulator';
 import { audioManager } from '@/utils/audioManager';
 import { getRandomItems, ITEM_TEMPLATES } from '@/data/items';
@@ -21,11 +24,20 @@ interface GameStore extends GameState {
   // Grid management
   gridOccupants: AnyGridOccupant[];
   updateGridOccupants: (occupants: AnyGridOccupant[]) => void;
+  gridSize: { rows: number; cols: number };
+  setGridSize: (rows: number, cols: number) => void;
+  zoomLevel: number; // 1.0 = normal, 0.75 = 75%, 0.5 = 50%
+  setZoomLevel: (zoom: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetZoom: () => void;
 
   // Navigation (now updates grid instead of changing screens, returns new occupant count)
   navigate: (screen: ScreenType) => number;
 
   // Campaign state
+  selectedLocationId: string | null;
+  setSelectedLocationId: (locationId: string | null) => void;
   selectedStageId: number | null;
   setSelectedStageId: (stageId: number | null) => void;
 
@@ -54,6 +66,13 @@ interface GameStore extends GameState {
   addHero: (hero: Hero) => void;
   removeHero: (heroInstanceId: string) => void;
   updateHero: (heroInstanceId: string, updates: Partial<Hero>) => void;
+  awardHeroExperience: (heroInstanceId: string, amount: number) => void;
+  recalculateHeroStatsWithLevel: (heroInstanceId: string) => void;
+
+  // Ability selection
+  abilitySelectionHeroId: string | null;
+  setAbilitySelectionHero: (heroId: string | null) => void;
+  learnAbility: (heroInstanceId: string, abilityId: string) => void;
 
   // Inventory management
   addItem: (item: Item) => void;
@@ -84,7 +103,7 @@ interface GameStore extends GameState {
 
 const initialPlayerData: PlayerData = {
   gold: 500,
-  gems: 50,
+  gems: 0, // Start with 0 gems - only get gems from bosses
   level: 1,
   experience: 0,
   maxExperience: 100,
@@ -96,11 +115,9 @@ const initialCampaignProgress: CampaignProgress = {
   stagesCompleted: new Set<number>(),
 };
 
-// Create starter heroes
+// Create starter heroes - only 1 Quester to start
 const starterHeroes = [
   createHeroInstance('quester', 1),
-  createHeroInstance('blood_knight', 1),
-  createHeroInstance('shadow_stalker', 1),
 ];
 
 const initialState = {
@@ -108,10 +125,13 @@ const initialState = {
   roster: starterHeroes as Hero[],
   inventory: [] as ItemInstance[],
   campaign: initialCampaignProgress,
-  unlockedFeatures: new Set<string>(['mainMenu', 'campaignMap']),
+  unlockedFeatures: new Set<string>(['mainMenu', 'locationMap']),
   currentScreen: ScreenType.MainMenu,
   selectedTeam: [] as string[],
   gridOccupants: [] as AnyGridOccupant[],
+  gridSize: { rows: 8, cols: 8 },
+  zoomLevel: 1.0,
+  selectedLocationId: null as string | null,
   selectedStageId: null as number | null,
   preBattleTeam: [] as string[],
   currentBattle: null as BattleState | null,
@@ -119,6 +139,7 @@ const initialState = {
   battleSpeed: 1,
   shopItems: [] as Item[],
   shopHeroes: [] as Hero[],
+  abilitySelectionHeroId: null as string | null,
 };
 
 export const useGameStore = create<GameStore>()(
@@ -129,6 +150,32 @@ export const useGameStore = create<GameStore>()(
       // Grid management
       updateGridOccupants: (occupants: AnyGridOccupant[]) =>
         set({ gridOccupants: occupants }),
+
+      setGridSize: (rows: number, cols: number) => {
+        set({ gridSize: { rows, cols } });
+      },
+
+      setZoomLevel: (zoom: number) => {
+        // Clamp zoom between 0.5 and 1.5
+        const clampedZoom = Math.max(0.5, Math.min(1.5, zoom));
+        set({ zoomLevel: clampedZoom });
+      },
+
+      zoomIn: () => {
+        const state = get();
+        const newZoom = Math.min(1.5, state.zoomLevel + 0.25);
+        set({ zoomLevel: newZoom });
+      },
+
+      zoomOut: () => {
+        const state = get();
+        const newZoom = Math.max(0.5, state.zoomLevel - 0.25);
+        set({ zoomLevel: newZoom });
+      },
+
+      resetZoom: () => {
+        set({ zoomLevel: 1.0 });
+      },
 
       // Navigation (updates grid occupants based on screen, returns new occupant count)
       navigate: (screen: ScreenType) => {
@@ -152,22 +199,27 @@ export const useGameStore = create<GameStore>()(
             state.player.gems,
             state.navigate
           );
+        } else if (screen === ScreenType.LocationMap) {
+          newOccupants = createLocationMapLayout(
+            state.campaign.stagesCompleted,
+            state.navigate,
+            state.setSelectedLocationId,
+            state.selectedLocationId
+          );
         } else if (screen === ScreenType.CampaignMap) {
           newOccupants = createCampaignMapLayout(
             state.campaign.stagesCompleted,
             state.navigate,
             state.setSelectedStageId,
-            state.selectedStageId
+            state.selectedStageId,
+            state.selectedLocationId
           );
         } else if (screen === ScreenType.PreBattle && state.selectedStageId) {
           const stage = getStageById(state.selectedStageId);
           if (stage) {
-            // Auto-select first hero if team is empty
-            let team = state.preBattleTeam;
-            if (team.length === 0 && state.roster.length > 0) {
-              team = [state.roster[0].instanceId];
-              set({ preBattleTeam: team });
-            }
+            // Keep existing team from previous missions
+            // Team will persist until player manually changes it
+            const team = state.preBattleTeam;
 
             newOccupants = createPreBattleLayout(
               stage,
@@ -211,6 +263,15 @@ export const useGameStore = create<GameStore>()(
             state.purchaseHero,
             state.refreshShop
           );
+        } else if (screen === ScreenType.AbilitySelection && state.abilitySelectionHeroId) {
+          // Find the hero that needs to select an ability
+          const hero = state.roster.find(h => h.instanceId === state.abilitySelectionHeroId);
+          if (hero) {
+            newOccupants = createAbilitySelectionLayout(
+              hero,
+              state.learnAbility
+            );
+          }
         }
 
         set({ gridOccupants: newOccupants });
@@ -220,6 +281,10 @@ export const useGameStore = create<GameStore>()(
       },
 
       // Campaign state
+      setSelectedLocationId: (locationId: string | null) => {
+        set({ selectedLocationId: locationId });
+      },
+
       setSelectedStageId: (stageId: number | null) => {
         const state = get();
         console.log('setSelectedStageId called with:', stageId);
@@ -230,7 +295,8 @@ export const useGameStore = create<GameStore>()(
           state.campaign.stagesCompleted,
           state.navigate,
           state.setSelectedStageId,
-          stageId
+          stageId,
+          state.selectedLocationId
         );
 
         set({ gridOccupants: newOccupants });
@@ -293,10 +359,14 @@ export const useGameStore = create<GameStore>()(
         }),
 
       // Roster management
-      addHero: (hero: Hero) =>
+      addHero: (hero: Hero) => {
         set((state) => ({
           roster: [...state.roster, hero],
-        })),
+        }));
+        // Recalculate stats for the new hero to ensure level bonuses are applied
+        const state = get();
+        state.recalculateHeroStatsWithLevel(hero.instanceId);
+      },
 
       removeHero: (heroInstanceId: string) =>
         set((state) => ({
@@ -310,6 +380,96 @@ export const useGameStore = create<GameStore>()(
             h.instanceId === heroInstanceId ? { ...h, ...updates } : h
           ),
         })),
+
+      awardHeroExperience: (heroInstanceId: string, amount: number) => {
+        const state = get();
+        const hero = state.roster.find(h => h.instanceId === heroInstanceId);
+        if (!hero) return;
+
+        const originalLevel = hero.level;
+        const hadNoAbilities = hero.abilities.length === 0;
+        let newExp = hero.experience + amount;
+        let newLevel = hero.level;
+        let maxExp = hero.maxExperience;
+        let didLevelUp = false;
+
+        // Level up logic - loop in case hero levels up multiple times
+        while (newExp >= maxExp) {
+          newExp -= maxExp;
+          newLevel++;
+          maxExp = Math.floor(100 * Math.pow(1.5, newLevel - 1));
+          console.log(`${hero.name} leveled up to level ${newLevel}!`);
+          didLevelUp = true;
+        }
+
+        // Update hero with new level and experience
+        state.updateHero(heroInstanceId, {
+          experience: newExp,
+          level: newLevel,
+          maxExperience: maxExp,
+        });
+
+        // Recalculate stats if level changed
+        if (newLevel !== originalLevel) {
+          state.recalculateHeroStatsWithLevel(heroInstanceId);
+        }
+
+        // Check if hero needs to select an ability after leveling up
+        // Use the stored state from before the update
+        if (didLevelUp && hadNoAbilities && HERO_LEARNABLE_ABILITIES[hero.id]) {
+          // Hero leveled up and has no abilities - trigger ability selection
+          console.log(`${hero.name} can now learn an ability!`);
+          state.setAbilitySelectionHero(heroInstanceId);
+        }
+      },
+
+      recalculateHeroStatsWithLevel: (heroInstanceId: string) => {
+        const state = get();
+        const hero = state.roster.find(h => h.instanceId === heroInstanceId);
+        if (!hero) return;
+
+        // Start with base stats and apply level-based growth
+        let newStats = { ...hero.baseStats };
+
+        // Apply stat growth for each level above 1
+        const levelsGained = hero.level - 1;
+        if (levelsGained > 0 && hero.statGrowth) {
+          newStats.hp += hero.statGrowth.hp * levelsGained;
+          newStats.maxHp += hero.statGrowth.hp * levelsGained;
+          newStats.damage += hero.statGrowth.damage * levelsGained;
+          newStats.speed += hero.statGrowth.speed * levelsGained;
+          newStats.defense += hero.statGrowth.defense * levelsGained;
+          newStats.critChance += hero.statGrowth.critChance * levelsGained;
+          newStats.critDamage += hero.statGrowth.critDamage * levelsGained;
+          newStats.evasion += hero.statGrowth.evasion * levelsGained;
+          newStats.accuracy += hero.statGrowth.accuracy * levelsGained;
+
+          if (hero.statGrowth.penetration) {
+            newStats.penetration = (newStats.penetration || 0) + hero.statGrowth.penetration * levelsGained;
+          }
+          if (hero.statGrowth.lifesteal) {
+            newStats.lifesteal = (newStats.lifesteal || 0) + hero.statGrowth.lifesteal * levelsGained;
+          }
+        }
+
+        // Apply equipped item effects on top of level-based stats
+        if (hero.equippedItem) {
+          const item = state.inventory.find(i => i.instanceId === hero.equippedItem);
+          if (item) {
+            item.effects.forEach(effect => {
+              const currentValue = newStats[effect.stat] as number;
+              if (effect.type === 'add') {
+                newStats[effect.stat] = (currentValue + effect.value) as any;
+              } else if (effect.type === 'multiply') {
+                newStats[effect.stat] = (currentValue * effect.value) as any;
+              }
+            });
+          }
+        }
+
+        // Update hero with new stats
+        state.updateHero(heroInstanceId, { currentStats: newStats });
+      },
 
       // Inventory management
       addItem: (item: Item) => {
@@ -394,35 +554,69 @@ export const useGameStore = create<GameStore>()(
 
       recalculateHeroStats: (heroInstanceId: string) => {
         const state = get();
+        // Use the level-aware recalculation function
+        state.recalculateHeroStatsWithLevel(heroInstanceId);
+      },
+
+      // Ability selection
+      setAbilitySelectionHero: (heroId: string | null) => {
+        set({ abilitySelectionHeroId: heroId });
+
+        // Navigate to ability selection screen if heroId is provided
+        if (heroId) {
+          // IMPORTANT: Clear battle state and set screen immediately
+          // This prevents any auto-advance logic from interfering
+          set({
+            currentBattle: null,
+            battleEventIndex: 0,
+          });
+
+          const state = get();
+          state.navigate(ScreenType.AbilitySelection);
+        }
+      },
+
+      learnAbility: (heroInstanceId: string, abilityId: string) => {
+        const state = get();
         const hero = state.roster.find(h => h.instanceId === heroInstanceId);
-        if (!hero) return;
 
-        // Start with base stats
-        let newStats = { ...hero.baseStats };
-
-        // Apply equipped item effects
-        if (hero.equippedItem) {
-          const item = state.inventory.find(i => i.instanceId === hero.equippedItem);
-          if (item) {
-            item.effects.forEach(effect => {
-              const currentValue = newStats[effect.stat] as number;
-              if (effect.type === 'add') {
-                newStats[effect.stat] = (currentValue + effect.value) as any;
-              } else if (effect.type === 'multiply') {
-                newStats[effect.stat] = (currentValue * effect.value) as any;
-              }
-            });
-          }
+        if (!hero) {
+          console.error('Hero not found:', heroInstanceId);
+          return;
         }
 
-        // Update hero with new stats
-        set((state) => ({
-          roster: state.roster.map(h =>
-            h.instanceId === heroInstanceId
-              ? { ...h, currentStats: newStats }
-              : h
-          ),
-        }));
+        // Check if ability exists in learnable abilities
+        const ability = LEARNABLE_ABILITIES[abilityId];
+        if (!ability) {
+          console.error('Ability not found:', abilityId);
+          return;
+        }
+
+        // Check if hero can learn this ability
+        const learnableAbilities = HERO_LEARNABLE_ABILITIES[hero.id];
+        if (!learnableAbilities || !learnableAbilities.includes(abilityId)) {
+          console.error(`${hero.name} cannot learn ${abilityId}`);
+          return;
+        }
+
+        // Add ability to hero's abilities array
+        const updatedAbilities = [...hero.abilities, { ...ability }];
+        state.updateHero(heroInstanceId, { abilities: updatedAbilities });
+
+        console.log(`${hero.name} learned ${ability.name}!`);
+
+        // Clear ability selection state
+        set({ abilitySelectionHeroId: null });
+
+        // Get fresh state after updates to ensure we use the updated roster
+        const freshState = get();
+
+        // Navigate back to PreBattle screen if we have a selectedStageId, otherwise go to CampaignMap
+        if (freshState.selectedStageId) {
+          freshState.navigate(ScreenType.PreBattle);
+        } else {
+          freshState.navigate(ScreenType.CampaignMap);
+        }
       },
 
       // Team selection
@@ -593,6 +787,16 @@ export const useGameStore = create<GameStore>()(
         const stage = getStageById(state.selectedStageId);
         if (!stage) return;
 
+        // Get location to determine grid size
+        const location = getLocationByStageId(state.selectedStageId);
+        if (location && location.gridSize) {
+          // Set grid size based on location
+          state.setGridSize(location.gridSize.rows, location.gridSize.cols);
+        } else {
+          // Default to 8x8 if no grid size specified
+          state.setGridSize(8, 8);
+        }
+
         // Get selected heroes
         const heroes = state.preBattleTeam
           .map((heroId) => state.roster.find((h) => h.instanceId === heroId))
@@ -600,9 +804,9 @@ export const useGameStore = create<GameStore>()(
 
         if (heroes.length === 0) return;
 
-        // Create enemies from stage
+        // Create enemies from stage with scaling based on stage number
         const enemies = stage.enemies.map((enemyType) =>
-          createEnemyInstance(enemyType)
+          createEnemyInstance(enemyType, state.selectedStageId)
         );
 
         // Run battle simulation to get all events
@@ -712,6 +916,10 @@ export const useGameStore = create<GameStore>()(
         } else {
           // Battle finished - handle victory/defeat
           console.log('Battle finished! Winner:', state.currentBattle.winner);
+
+          let shouldAutoAdvance = false;
+          let nextStageId: number | null = null;
+
           if (state.currentBattle.winner === 'heroes' && state.selectedStageId) {
             // Award rewards and mark stage as completed
             const stage = getStageById(state.selectedStageId);
@@ -719,27 +927,131 @@ export const useGameStore = create<GameStore>()(
               console.log('Completing stage:', state.selectedStageId);
               state.addGold(stage.rewards.gold);
               state.addExperience(stage.rewards.experience);
+
+              // Award gems for boss stages
+              if (stage.rewards.gems && stage.rewards.gems > 0) {
+                state.addGems(stage.rewards.gems);
+                console.log(`Boss defeated! Awarded ${stage.rewards.gems} gems!`);
+              }
+
+              // Award XP to all participating heroes
+              const xpPerHero = Math.floor(stage.rewards.experience / state.preBattleTeam.length);
+              state.preBattleTeam.forEach(heroId => {
+                state.awardHeroExperience(heroId, xpPerHero);
+              });
+
               state.completeStage(state.selectedStageId);
+
+              // Check if any hero needs to select an ability
+              // If so, don't auto-advance - let the player make their choice first
+              const freshState = get();
+              if (freshState.abilitySelectionHeroId) {
+                console.log('Hero needs to select ability - pausing auto-advance');
+                shouldAutoAdvance = false;
+              } else {
+                // Check if there's a next unlocked stage to auto-advance to
+                const newCompletedStages = new Set(state.campaign.stagesCompleted);
+                newCompletedStages.add(state.selectedStageId);
+                nextStageId = getNextUnlockedStage(newCompletedStages);
+
+                // Get current location
+                const currentLocation = getLocationByStageId(state.selectedStageId);
+                const nextLocation = nextStageId ? getLocationByStageId(nextStageId) : null;
+
+                // Auto-advance only if:
+                // 1. Next stage exists and isn't past the end
+                // 2. Next stage is in the SAME location (don't auto-advance to new locations)
+                if (nextStageId && nextStageId <= 512 &&
+                    currentLocation && nextLocation &&
+                    currentLocation.id === nextLocation.id) {
+                  shouldAutoAdvance = true;
+                  console.log('Auto-advancing to next stage in same location:', nextStageId);
+                } else if (currentLocation && nextLocation && currentLocation.id !== nextLocation.id) {
+                  console.log('Location completed! Returning to location map.');
+                }
+              }
             }
           }
 
-          // Switch back to main menu music
-          audioManager.playMusic('/Goblins_Den_(Regular).wav', true, 0.5);
-
-          // Navigate back to campaign map with transition
+          // Clear battle state
           set({
             currentBattle: null,
             battleEventIndex: 0,
-            preBattleTeam: [],
-            selectedStageId: null, // Clear selected stage
           });
 
-          console.log('Navigating back to campaign map');
-          // Use transition-aware navigate if available, otherwise fallback to direct navigate
-          if ((window as any).__gridNavigate) {
-            (window as any).__gridNavigate(ScreenType.CampaignMap);
+          if (shouldAutoAdvance && nextStageId) {
+            // Auto-advance to next stage - start battle immediately
+            // Keep battle music playing for smooth transition
+            console.log('Auto-advancing to next stage:', nextStageId);
+
+            // Set the next stage
+            set({ selectedStageId: nextStageId });
+
+            // Small delay to ensure state is updated, then start battle directly
+            setTimeout(() => {
+              const freshState = get();
+
+              // CRITICAL: Double-check that no ability selection is pending
+              // This prevents auto-advance from overriding ability selection at high speeds
+              if (freshState.abilitySelectionHeroId) {
+                console.log('Ability selection detected in auto-advance - cancelling auto-advance');
+                return;
+              }
+
+              // Get location to determine grid size for next battle
+              const location = getLocationByStageId(nextStageId);
+              if (location && location.gridSize) {
+                freshState.setGridSize(location.gridSize.rows, location.gridSize.cols);
+              } else {
+                freshState.setGridSize(8, 8);
+              }
+
+              // Start the next battle immediately
+              freshState.startBattle();
+            }, 800);
           } else {
-            state.navigate(ScreenType.CampaignMap);
+            // Check if ability selection is pending - if so, don't navigate anywhere
+            // The navigation already happened when setAbilitySelectionHero was called
+            const freshState = get();
+            if (freshState.abilitySelectionHeroId) {
+              console.log('Ability selection screen active - staying on ability selection');
+              // Don't navigate, don't change music, stay on ability selection screen
+              return;
+            }
+
+            // Defeat, location completed, or no more stages - return to location/campaign map
+            const wasVictory = state.currentBattle?.winner === 'heroes';
+            const currentLocation = state.selectedStageId ? getLocationByStageId(state.selectedStageId) : null;
+            const nextLocation = nextStageId ? getLocationByStageId(nextStageId) : null;
+
+            // Determine where to navigate
+            let targetScreen = ScreenType.CampaignMap;
+            if (wasVictory && currentLocation && nextLocation && currentLocation.id !== nextLocation.id) {
+              // Location completed - return to location map
+              targetScreen = ScreenType.LocationMap;
+              console.log('Location completed! Returning to location map.');
+            } else if (!wasVictory) {
+              // Defeat - return to campaign map
+              targetScreen = ScreenType.CampaignMap;
+              console.log('Defeat! Returning to campaign map.');
+            } else {
+              // All stages completed
+              targetScreen = ScreenType.LocationMap;
+              console.log('All stages completed! Returning to location map.');
+            }
+
+            // Switch back to main menu music
+            audioManager.playMusic('/Goblins_Den_(Regular).wav', true, 0.5);
+
+            // Clear selected stage
+            set({ selectedStageId: null });
+
+            // Use transition-aware navigate if available, otherwise fallback to direct navigate
+            if ((window as any).__gridNavigate) {
+              (window as any).__gridNavigate(targetScreen);
+            } else {
+              state.navigate(targetScreen);
+            }
           }
         }
       },
@@ -830,16 +1142,17 @@ export const useGameStore = create<GameStore>()(
           return false;
         }
 
-        const heroCost = 200; // Fixed cost for now
+        // Calculate hero cost based on rarity/tier
+        const heroCost = getHeroGemCost(hero.rarity);
 
-        // Check if player has enough gold
-        if (state.player.gold < heroCost) {
-          console.log('Not enough gold to purchase hero');
+        // Check if player has enough gems (not gold!)
+        if (state.player.gems < heroCost) {
+          console.log(`Not enough gems to purchase hero. Need ${heroCost}, have ${state.player.gems}`);
           return false;
         }
 
-        // Deduct gold and add hero to roster
-        if (state.spendGold(heroCost)) {
+        // Deduct gems and add hero to roster
+        if (state.spendGems(heroCost)) {
           // Create a new instance to avoid conflicts
           const newHero = createHeroInstance(hero.id, 1) as Hero;
           state.addHero(newHero);
@@ -848,7 +1161,7 @@ export const useGameStore = create<GameStore>()(
           const newShopHeroes = state.shopHeroes.filter(h => h !== hero);
           set({ shopHeroes: newShopHeroes });
 
-          // Regenerate shop layout with updated gold and heroes
+          // Regenerate shop layout with updated gems and heroes
           if (state.currentScreen === ScreenType.Shop) {
             const newOccupants = createShopLayout(
               state.player.gold,
@@ -863,7 +1176,7 @@ export const useGameStore = create<GameStore>()(
             set({ gridOccupants: newOccupants });
           }
 
-          console.log(`Purchased ${hero.name} for ${heroCost} gold`);
+          console.log(`Purchased ${hero.name} for ${heroCost} gems`);
           return true;
         }
 
@@ -885,6 +1198,7 @@ export const useGameStore = create<GameStore>()(
         },
         unlockedFeatures: Array.from(state.unlockedFeatures),
         selectedTeam: state.selectedTeam,
+        preBattleTeam: state.preBattleTeam, // Persist team composition
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {

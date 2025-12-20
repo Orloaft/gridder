@@ -66,6 +66,8 @@ export interface GridButton extends BaseGridOccupant {
   variant?: 'primary' | 'secondary' | 'danger';
   disabled?: boolean;
   onDrop?: (heroId: string) => void; // For drag-and-drop support
+  onMouseEnter?: () => void; // For hover effects
+  onMouseLeave?: () => void; // For hover effects
 }
 
 // Menu item occupant

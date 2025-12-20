@@ -13,6 +13,7 @@ function clampGridPosition(position: GridPosition): GridPosition {
 
 /**
  * Animates a tile sliding from one grid position to another
+ * Uses CSS transforms for smooth, hardware-accelerated diagonal movement
  * @param element - The DOM element to animate
  * @param fromPosition - Starting grid position
  * @param toPosition - Ending grid position
@@ -37,20 +38,37 @@ export function animateTileSlide(
   const toX = clampedTo.col * cellSize;
   const toY = clampedTo.row * cellSize;
 
-  gsap.fromTo(
-    element,
-    {
-      left: fromX,
-      top: fromY,
+  // Calculate the delta for transform-based animation
+  const deltaX = toX - fromX;
+  const deltaY = toY - fromY;
+
+  // First, ensure the element is at the starting position
+  gsap.set(element, {
+    left: fromX,
+    top: fromY,
+    x: 0,
+    y: 0,
+  });
+
+  // Then animate using transforms for smooth diagonal movement
+  // Transforms are hardware-accelerated and guarantee simultaneous X/Y movement
+  gsap.to(element, {
+    x: deltaX,
+    y: deltaY,
+    duration,
+    ease: 'power2.inOut',
+    onComplete: () => {
+      // After animation completes, update position and reset transform
+      // This prevents transform accumulation on subsequent moves
+      gsap.set(element, {
+        left: toX,
+        top: toY,
+        x: 0,
+        y: 0,
+      });
+      onComplete?.();
     },
-    {
-      left: toX,
-      top: toY,
-      duration,
-      ease: 'power2.inOut',
-      onComplete,
-    }
-  );
+  });
 }
 
 /**

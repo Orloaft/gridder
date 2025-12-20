@@ -6,15 +6,23 @@ import { ScreenType } from '@/types/progression.types';
 import { GameGrid } from '@/components/Grid/GameGrid';
 import { LoadingBar } from '@/components/LoadingBar';
 import { UnitInfoPanel } from '@/components/UnitInfoPanel';
+import { StageInfoPanel } from '@/components/StageInfoPanel';
+import { LocationInfoPanel } from '@/components/LocationInfoPanel';
+import { CombatLog } from '@/components/CombatLog';
+import { ZoomControls } from '@/components/ZoomControls';
 import { InventoryGrid } from '@/components/InventoryGrid';
 import { animateGridTransition, animateGridEntrance } from '@/animations/gridTransitions';
 import { audioManager } from '@/utils/audioManager';
 import { getStageById } from '@/data/stages';
+import { getLocationById, isLocationUnlocked } from '@/data/locations';
 import { useBattleAutoAdvance } from '@/hooks/useBattleAutoAdvance';
 import { useBattleAnimations } from '@/hooks/useBattleAnimations';
 import { useResponsiveGrid } from '@/hooks/useResponsiveGrid';
 import { GridHero, GridEnemy, isGridHero, isGridEnemy, AnyGridOccupant } from '@/types/grid.types';
 import { ItemInstance } from '@/types/core.types';
+import { createCampaignMapLayout } from '@/screens/CampaignMap/CampaignMapLayout';
+import { createLocationMapLayout } from '@/screens/LocationMap/LocationMapLayout';
+import { isStageUnlocked } from '@/data/stages';
 
 export default function Home() {
   const screenRef = useRef<HTMLDivElement>(null);
@@ -27,6 +35,8 @@ export default function Home() {
   const [hoveredUnit, setHoveredUnit] = useState<GridHero | GridEnemy | null>(null);
   const [hoveredItem, setHoveredItem] = useState<ItemInstance | null>(null);
   const [draggedItem, setDraggedItem] = useState<ItemInstance | null>(null);
+  const [hoveredStageId, setHoveredStageId] = useState<number | null>(null);
+  const [hoveredLocationId, setHoveredLocationId] = useState<string | null>(null);
 
   // Auto-advance battle events (200ms base for tick-based combat)
   useBattleAutoAdvance(200);
@@ -43,11 +53,21 @@ export default function Home() {
     updateGridOccupants,
     currentScreen,
     selectedStageId,
+    setSelectedStageId,
+    selectedLocationId,
+    setSelectedLocationId,
     campaign,
     player,
     inventory,
     roster,
     equipItem,
+    currentBattle,
+    battleEventIndex,
+    gridSize,
+    zoomLevel,
+    zoomIn,
+    zoomOut,
+    resetZoom,
   } = useGameStore();
 
   const prevInventoryLength = useRef(inventory.length);
@@ -140,11 +160,39 @@ export default function Home() {
     };
   }, []);
 
+  // Keyboard shortcuts for zoom
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Zoom in: + or =
+      if ((e.key === '+' || e.key === '=') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        zoomIn();
+      }
+      // Zoom out: -
+      else if (e.key === '-' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        zoomOut();
+      }
+      // Reset zoom: 0
+      else if (e.key === '0' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        resetZoom();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [zoomIn, zoomOut, resetZoom]);
+
   // Get background gradient based on current screen
   const getBackgroundClass = () => {
     switch (currentScreen) {
       case ScreenType.MainMenu:
         return 'bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900';
+      case ScreenType.LocationMap:
+        return 'bg-gradient-to-br from-gray-900 via-indigo-900 to-gray-900';
       case ScreenType.CampaignMap:
         return 'bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900';
       case ScreenType.HeroRoster:
@@ -180,6 +228,45 @@ export default function Home() {
     setDraggedItem(null);
   }, []);
 
+  // Handle stage hover
+  const handleStageHover = useCallback((stageId: number | null) => {
+    setHoveredStageId(stageId);
+  }, []);
+
+  // Handle location hover
+  const handleLocationHover = useCallback((locationId: string | null) => {
+    setHoveredLocationId(locationId);
+  }, []);
+
+  // Regenerate campaign map layout with hover callbacks when on CampaignMap screen
+  useEffect(() => {
+    if (currentScreen === ScreenType.CampaignMap && showGrid) {
+      const newOccupants = createCampaignMapLayout(
+        campaign.stagesCompleted,
+        navigate,
+        setSelectedStageId,
+        selectedStageId,
+        selectedLocationId,
+        handleStageHover
+      );
+      updateGridOccupants(newOccupants);
+    }
+  }, [currentScreen, campaign.stagesCompleted, selectedStageId, selectedLocationId, showGrid, navigate, setSelectedStageId, handleStageHover, updateGridOccupants]);
+
+  // Regenerate location map layout with hover callbacks when on LocationMap screen
+  useEffect(() => {
+    if (currentScreen === ScreenType.LocationMap && showGrid) {
+      const newOccupants = createLocationMapLayout(
+        campaign.stagesCompleted,
+        navigate,
+        setSelectedLocationId,
+        selectedLocationId,
+        handleLocationHover
+      );
+      updateGridOccupants(newOccupants);
+    }
+  }, [currentScreen, campaign.stagesCompleted, selectedLocationId, showGrid, navigate, setSelectedLocationId, handleLocationHover, updateGridOccupants]);
+
   // Animate inventory grid when items change
   useEffect(() => {
     if (!inventoryGridRef.current || !showGrid) return;
@@ -211,16 +298,38 @@ export default function Home() {
         ref={screenRef}
         className={`min-h-screen ${getBackgroundClass()} flex items-center justify-center p-8 gap-8 transition-colors duration-700`}
       >
-        {/* Unit Info Panel on the left */}
+        {/* Left Panel - shows different content based on screen */}
         {showGrid && (
           <div style={{ height: responsiveDimensions.totalHeight }}>
-            <UnitInfoPanel
-              unit={hoveredUnit}
-              hoveredItem={hoveredItem}
-              roster={roster}
-              inventory={inventory}
-              width={responsiveDimensions.unitInfoPanelWidth}
-            />
+            {currentScreen === ScreenType.LocationMap ? (
+              <LocationInfoPanel
+                location={hoveredLocationId ? getLocationById(hoveredLocationId) ?? null : null}
+                isUnlocked={hoveredLocationId ? isLocationUnlocked(hoveredLocationId, campaign.stagesCompleted) : false}
+                completedStages={campaign.stagesCompleted}
+                width={responsiveDimensions.unitInfoPanelWidth}
+              />
+            ) : currentScreen === ScreenType.CampaignMap ? (
+              <StageInfoPanel
+                stage={hoveredStageId ? getStageById(hoveredStageId) ?? null : null}
+                isCompleted={hoveredStageId ? campaign.stagesCompleted.has(hoveredStageId) : false}
+                isUnlocked={hoveredStageId ? isStageUnlocked(hoveredStageId, campaign.stagesCompleted) : false}
+                width={responsiveDimensions.unitInfoPanelWidth}
+              />
+            ) : currentScreen === ScreenType.Battle && currentBattle && !hoveredUnit ? (
+              <CombatLog
+                events={currentBattle.events}
+                currentEventIndex={battleEventIndex}
+                width={responsiveDimensions.unitInfoPanelWidth}
+              />
+            ) : (
+              <UnitInfoPanel
+                unit={hoveredUnit}
+                hoveredItem={hoveredItem}
+                roster={roster}
+                inventory={inventory}
+                width={responsiveDimensions.unitInfoPanelWidth}
+              />
+            )}
           </div>
         )}
 
@@ -229,9 +338,10 @@ export default function Home() {
         <div style={{ opacity: showGrid ? 1 : 1 }}>
           <GameGrid
             ref={gridRef}
-            rows={8}
-            cols={8}
+            rows={gridSize.rows}
+            cols={gridSize.cols}
             cellSize={responsiveDimensions.mainGridCellSize}
+            zoom={zoomLevel}
             occupants={showGrid ? gridOccupants : []}
             onUnitHover={handleUnitHover}
           />
@@ -259,6 +369,16 @@ export default function Home() {
       {/* Loading Bar - overlays on top of grid and background */}
       {isLoading && (
         <LoadingBar onComplete={handleLoadingComplete} duration={2} />
+      )}
+
+      {/* Zoom Controls in bottom right corner */}
+      {showGrid && (
+        <ZoomControls
+          zoomLevel={zoomLevel}
+          onZoomIn={zoomIn}
+          onZoomOut={zoomOut}
+          onResetZoom={resetZoom}
+        />
       )}
 
       {/* Fullscreen button in bottom left corner - outside animated container */}
