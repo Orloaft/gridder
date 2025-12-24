@@ -13,6 +13,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.sword,
     cost: 50,
     slot: 'weapon',
+    maxDurability: 3,
   },
 
   iron_sword: {
@@ -24,6 +25,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.sword,
     cost: 150,
     slot: 'weapon',
+    maxDurability: 5,
   },
 
   hunter_bow: {
@@ -38,6 +40,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.bow,
     cost: 200,
     slot: 'weapon',
+    maxDurability: 5,
   },
 
   magic_wand: {
@@ -52,6 +55,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.wand,
     cost: 300,
     slot: 'weapon',
+    maxDurability: 7,
   },
 
   mystic_wand: {
@@ -66,6 +70,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.blueWand,
     cost: 500,
     slot: 'weapon',
+    maxDurability: 10,
   },
 
   // Armor
@@ -78,6 +83,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.shield,
     cost: 50,
     slot: 'armor',
+    maxDurability: 3,
   },
 
   iron_shield: {
@@ -92,6 +98,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.shield,
     cost: 180,
     slot: 'armor',
+    maxDurability: 5,
   },
 
   // Accessories
@@ -104,6 +111,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.boot,
     cost: 75,
     slot: 'accessory',
+    maxDurability: 3,
   },
 
   winged_boots: {
@@ -118,6 +126,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.wingHelmet,
     cost: 250,
     slot: 'accessory',
+    maxDurability: 7,
   },
 
   power_orb: {
@@ -132,6 +141,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.orb,
     cost: 400,
     slot: 'accessory',
+    maxDurability: 10,
   },
 
   lucky_crown: {
@@ -146,6 +156,7 @@ export const ITEM_TEMPLATES: Record<string, Item> = {
     spritePath: ICON_PATHS.crown,
     cost: 800,
     slot: 'accessory',
+    maxDurability: 10,
   },
 };
 

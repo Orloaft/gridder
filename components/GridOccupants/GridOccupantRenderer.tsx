@@ -10,6 +10,7 @@ import {
   isGridStatusPanel,
   isGridResource,
   isGridDecoration,
+  isGridItem,
 } from '@/types/grid.types';
 import { GridHeroCard } from './GridHeroCard';
 import { GridEnemyCard } from './GridEnemyCard';
@@ -18,6 +19,7 @@ import { GridMenuItemCard } from './GridMenuItemCard';
 import { GridStatusPanelCard } from './GridStatusPanelCard';
 import { GridResourceCard } from './GridResourceCard';
 import { GridDecorationCard } from './GridDecorationCard';
+import { GridItemCard } from './GridItemCard';
 
 export interface GridOccupantRendererProps {
   occupant: AnyGridOccupant;
@@ -51,6 +53,10 @@ export function GridOccupantRenderer({ occupant, cellSize }: GridOccupantRendere
 
   if (isGridDecoration(occupant)) {
     return <GridDecorationCard decoration={occupant} cellSize={cellSize} />;
+  }
+
+  if (isGridItem(occupant)) {
+    return <GridItemCard item={occupant} cellSize={cellSize} />;
   }
 
   return null;

@@ -44,23 +44,49 @@ export function createCampaignMapLayout(
       )
     : CAMPAIGN_STAGES;
 
-  // Display stages in 8x8 grid layout
-  // For location-specific view: 8 stages arranged in one row
-  // For all stages view: 64 stages in full grid
-  locationStages.forEach((stage, index) => {
-    // Calculate grid position: stages 1-8 in row 0, stages 9-16 in row 1, etc.
-    let row = Math.floor(index / 8);
-    let col = index % 8;
+  // Calculate how many stages we have and determine shop placement
+  const totalStages = locationStages.length;
+  const rowsWithStages = Math.ceil(totalStages / 7); // Now 7 stages per row to make room for shop
 
-    // Special case: stage 64 (index 63) goes to position (7, 6) instead of (7, 7)
-    if (index === 63) {
-      row = 7;
+  // Add shop buttons - one per row at col 0, except row 7
+  for (let row = 0; row < Math.min(rowsWithStages, 8); row++) {
+    // Only show shop if at least one stage in this row is unlocked
+    const rowStartIndex = row * 7; // 7 stages per row now
+    const rowEndIndex = Math.min(rowStartIndex + 7, totalStages);
+    const rowStages = locationStages.slice(rowStartIndex, rowEndIndex);
+    const hasUnlockedStage = rowStages.some(stage =>
+      isStageUnlocked(stage.id, completedStages) || completedStages.has(stage.id)
+    );
+
+    if (hasUnlockedStage && rowStages.length > 0) {
+      occupants.push({
+        id: `shop-row-${row}`,
+        type: GridOccupantType.Button,
+        position: { row, col: 0 },
+        label: 'Shop',
+        icon: '🛒',
+        variant: 'secondary',
+        onClick: () => navigate(ScreenType.Shop),
+        animationDelay: 0.02 + row * 7 * 0.02, // Appear with row's stages
+      });
+    }
+  }
+
+  // Display stages in grid layout with 7 stages per row (cols 1-7) to make room for shop
+  locationStages.forEach((stage, index) => {
+    // 7 stages per row, starting at col 1 (col 0 is for shop)
+    let row = Math.floor(index / 7);
+    let col = (index % 7) + 1; // Shift right by 1 to make room for shop at col 0
+
+    // Special case for last row: back button is at (7, 7)
+    // If we're in row 7 and would place at col 7, shift earlier
+    if (row === 7 && col === 7) {
+      // Place at col 6 instead
       col = 6;
     }
-    // Shift stage 63 (index 62) to make room - it goes to col 5 instead of col 6
-    else if (index === 62) {
-      row = 7;
-      col = 5;
+    // Push subsequent stages in row 7 left as well
+    if (row === 7 && col > 7) {
+      col = col - 1;
     }
 
     const position = { row, col };

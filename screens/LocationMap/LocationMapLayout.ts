@@ -98,9 +98,17 @@ export function createLocationMapLayout(
           onLocationSelect(location.id);
           // Navigate based on location type
           if (location.type === LocationType.Combat) {
-            // Combat locations go to CampaignMap
-            if ((window as any).__gridNavigate) {
-              (window as any).__gridNavigate(ScreenType.CampaignMap);
+            // Combat locations now represent single multi-wave missions
+            // Set the stage to the first stage in this location's range
+            if (location.stageRange) {
+              const { useGameStore } = require('@/store/gameStore');
+              const stageId = location.stageRange.start; // Use first stage of location as the mission
+              useGameStore.setState({ selectedStageId: stageId });
+
+              // Navigate directly to PreBattle
+              if ((window as any).__gridNavigate) {
+                (window as any).__gridNavigate(ScreenType.PreBattle);
+              }
             }
           } else if (location.type === LocationType.Shop || location.type === LocationType.Recruitment) {
             // Shop/Recruitment locations go to Shop screen

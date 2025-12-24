@@ -17,8 +17,8 @@ export function calculatePixelPosition(
 
 /**
  * Cleave/Slash Animation
- * Duration: 0.6s
- * Effect: Sweeping arc slash motion with trail effect
+ * Duration: 0.8s
+ * Effect: Hero attacks forward then massive slash covers all enemy tiles
  */
 export function animateCleave(
   casterElement: HTMLElement,
@@ -27,93 +27,279 @@ export function animateCleave(
   cellSize: number,
   containerElement: HTMLElement
 ): gsap.core.Timeline {
+  console.log('[animateCleave] Starting animation', {
+    casterElement,
+    targetPositions,
+    casterPosition,
+    cellSize,
+    containerElement
+  });
+
   const tl = gsap.timeline();
 
-  // Wind-up motion
+  // Step 1: Wind-up - Hero pulls back
   tl.to(casterElement, {
-    rotation: -15,
+    x: -20,  // Pull back to the left
+    rotation: -10,
+    scale: 1.05,
+    duration: 0.2,
+    ease: 'power2.out',
+  });
+
+  // Step 2: Attack dash forward
+  tl.to(casterElement, {
+    x: 30,  // Dash forward to the right
+    rotation: 15,
     scale: 1.1,
+    duration: 0.15,
+    ease: 'power3.out',
+  });
+
+  // Step 3: Create massive cleaving slash covering all enemy positions
+  const casterPixelPos = calculatePixelPosition(casterPosition, cellSize);
+
+  // Calculate bounds of all target positions to create a slash that covers them all
+  if (targetPositions.length > 0) {
+    const minRow = Math.min(...targetPositions.map(p => p.row));
+    const maxRow = Math.max(...targetPositions.map(p => p.row));
+    const minCol = Math.min(...targetPositions.map(p => p.col));
+    const maxCol = Math.max(...targetPositions.map(p => p.col));
+
+    // Create a wide slash effect that covers the enemy area
+    const slashWidth = (maxCol - minCol + 2) * cellSize;
+    const slashHeight = (maxRow - minRow + 2) * cellSize;
+    const slashCenterX = (minCol + maxCol) / 2 * cellSize + cellSize / 2;
+    const slashCenterY = (minRow + maxRow) / 2 * cellSize + cellSize / 2;
+
+    const slashEffect = document.createElement('div');
+    slashEffect.className = 'skill-slash-effect';
+    slashEffect.style.position = 'absolute';
+    slashEffect.style.width = `${slashWidth}px`;
+    slashEffect.style.height = `${slashHeight}px`;
+    slashEffect.style.left = `${slashCenterX}px`;
+    slashEffect.style.top = `${slashCenterY}px`;
+    slashEffect.style.transform = 'translate(-50%, -50%)';
+    slashEffect.style.pointerEvents = 'none';
+    slashEffect.style.zIndex = '1500';
+
+    // Create sweeping slash visual
+    slashEffect.innerHTML = `
+      <svg viewBox="0 0 100 100" style="width: 100%; height: 100%; transform: rotate(-30deg);">
+        <path d="M 0 80 Q 30 20, 100 0" stroke="#FFD700" stroke-width="20" fill="none" stroke-linecap="round" opacity="0.9" />
+        <path d="M 0 80 Q 30 20, 100 0" stroke="#FFF" stroke-width="12" fill="none" stroke-linecap="round" opacity="0.7" />
+        <path d="M 0 80 Q 30 20, 100 0" stroke="#FFD700" stroke-width="6" fill="none" stroke-linecap="round" opacity="1" />
+      </svg>
+    `;
+
+    containerElement.appendChild(slashEffect);
+    gsap.set(slashEffect, { opacity: 0, scaleX: 0, scaleY: 1.2 });
+
+    // Slash sweeps across
+    tl.to(
+      slashEffect,
+      {
+        opacity: 1,
+        scaleX: 1.3,
+        scaleY: 1,
+        duration: 0.2,
+        ease: 'power2.out',
+      },
+      '-=0.1'
+    );
+
+    // Create hit effects on each target tile
+    targetPositions.forEach((targetPos, index) => {
+      const targetPixelPos = calculatePixelPosition(targetPos, cellSize);
+      tl.add(() => {
+        // Impact flash
+        createCleaveImpact(
+          { x: targetPixelPos.x + cellSize / 2, y: targetPixelPos.y + cellSize / 2 },
+          containerElement,
+          cellSize
+        );
+      }, 0.25 + index * 0.03);
+    });
+
+    // Fade out slash effect
+    tl.to(slashEffect, {
+      opacity: 0,
+      scaleX: 1.5,
+      duration: 0.25,
+      ease: 'power2.in',
+      onComplete: () => {
+        slashEffect.remove();
+      },
+    }, '+=0.1');
+  }
+
+  // Step 4: Hero returns to position
+  tl.to(
+    casterElement,
+    {
+      x: 0,
+      rotation: 0,
+      scale: 1,
+      duration: 0.2,
+      ease: 'back.out(1.5)',
+    },
+    '-=0.15'
+  );
+
+  return tl;
+}
+
+/**
+ * Blood Strike Animation
+ * Duration: 0.8s
+ * Effect: Melee attack with blood/lifesteal visuals
+ */
+export function animateBloodStrike(
+  casterElement: HTMLElement,
+  targetElement: HTMLElement,
+  casterPosition: GridPosition,
+  targetPosition: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const casterPixelPos = calculatePixelPosition(casterPosition, cellSize);
+  const targetPixelPos = calculatePixelPosition(targetPosition, cellSize);
+
+  // Determine direction based on hero/enemy
+  const isHero = casterPosition.col < targetPosition.col;
+  const attackDirection = isHero ? 1 : -1;
+
+  // Wind-up with red glow
+  tl.to(casterElement, {
+    scale: 1.1,
+    x: -15 * attackDirection,
+    filter: 'brightness(1.3) saturate(1.5) hue-rotate(-10deg)', // Red tint
+    duration: 0.2,
+    ease: 'power2.out',
+  });
+
+  // Strike forward
+  tl.to(casterElement, {
+    x: 25 * attackDirection,
+    scale: 1.15,
+    duration: 0.15,
+    ease: 'power3.out',
+  });
+
+  // Blood splash on target
+  tl.add(() => {
+    createBloodSplash(
+      { x: targetPixelPos.x + cellSize / 2, y: targetPixelPos.y + cellSize / 2 },
+      containerElement,
+      cellSize
+    );
+  }, '-=0.05');
+
+  // Blood particles fly back to caster (lifesteal visual)
+  tl.add(() => {
+    createLifestealParticles(
+      { x: targetPixelPos.x + cellSize / 2, y: targetPixelPos.y + cellSize / 2 },
+      { x: casterPixelPos.x + cellSize / 2, y: casterPixelPos.y + cellSize / 2 },
+      containerElement
+    );
+  }, '+=0.1');
+
+  // Healing glow on caster
+  tl.to(casterElement, {
+    filter: 'brightness(1.4) saturate(1.3) drop-shadow(0 0 10px #8B0000)',
+    duration: 0.2,
+    ease: 'power2.out',
+  }, '-=0.3');
+
+  // Return to normal
+  tl.to(casterElement, {
+    x: 0,
+    scale: 1,
+    filter: 'brightness(1) saturate(1)',
+    duration: 0.2,
+    ease: 'back.out(1.5)',
+  });
+
+  return tl;
+}
+
+/**
+ * Arrow/Projectile Animation
+ * Duration: 0.5s
+ * Effect: Arrow flies from caster to target
+ */
+export function animateArrow(
+  casterElement: HTMLElement,
+  targetElement: HTMLElement,
+  casterPosition: GridPosition,
+  targetPosition: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const casterPixelPos = calculatePixelPosition(casterPosition, cellSize);
+  const targetPixelPos = calculatePixelPosition(targetPosition, cellSize);
+
+  // Calculate angle for arrow rotation
+  const dx = targetPixelPos.x - casterPixelPos.x;
+  const dy = targetPixelPos.y - casterPixelPos.y;
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+  // Brief draw bow animation
+  tl.to(casterElement, {
+    scale: 1.1,
+    x: -10,
     duration: 0.15,
     ease: 'power2.out',
   });
 
-  // Create slash effect element
-  const slashEffect = document.createElement('div');
-  slashEffect.className = 'skill-slash-effect';
-  slashEffect.style.position = 'absolute';
-  slashEffect.style.width = `${cellSize * 2}px`;
-  slashEffect.style.height = `${cellSize * 2}px`;
+  // Create arrow projectile
+  const arrow = document.createElement('div');
+  arrow.className = 'skill-arrow';
+  arrow.style.position = 'absolute';
+  arrow.style.width = `${cellSize * 0.6}px`;
+  arrow.style.height = '4px';
+  arrow.style.left = `${casterPixelPos.x + cellSize / 2}px`;
+  arrow.style.top = `${casterPixelPos.y + cellSize / 2}px`;
+  arrow.style.background = 'linear-gradient(90deg, #8B4513 0%, #D2691E 70%, #FFD700 100%)';
+  arrow.style.boxShadow = '0 0 4px rgba(139, 69, 19, 0.5)';
+  arrow.style.pointerEvents = 'none';
+  arrow.style.zIndex = '1500';
+  arrow.style.transformOrigin = 'left center';
+  arrow.style.transform = `rotate(${angle}deg)`;
 
-  const casterPixelPos = calculatePixelPosition(casterPosition, cellSize);
-  slashEffect.style.left = `${casterPixelPos.x - cellSize / 2}px`;
-  slashEffect.style.top = `${casterPixelPos.y - cellSize / 2}px`;
-  slashEffect.style.pointerEvents = 'none';
-  slashEffect.style.zIndex = '1500';
+  containerElement.appendChild(arrow);
 
-  // Create arc/slash visual
-  slashEffect.innerHTML = `
-    <svg viewBox="0 0 100 100" style="width: 100%; height: 100%;">
-      <path d="M 10 50 Q 50 10, 90 50" stroke="#FFD700" stroke-width="8" fill="none" stroke-linecap="round" opacity="0.8" />
-      <path d="M 10 50 Q 50 10, 90 50" stroke="#FFF" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.6" />
-    </svg>
-  `;
+  // Launch arrow
+  tl.to(arrow, {
+    x: targetPixelPos.x + cellSize / 2 - (casterPixelPos.x + cellSize / 2),
+    y: targetPixelPos.y + cellSize / 2 - (casterPixelPos.y + cellSize / 2),
+    duration: 0.3,
+    ease: 'linear',
+  }, '+=0.05');
 
-  containerElement.appendChild(slashEffect);
-  gsap.set(slashEffect, { opacity: 0, scale: 0.5, rotation: -45 });
-
-  // Slash motion
-  tl.to(casterElement, {
-    rotation: 30,
-    duration: 0.25,
-    ease: 'power4.out',
-  });
-
-  // Slash effect appears and sweeps
+  // Caster returns to normal
   tl.to(
-    slashEffect,
+    casterElement,
     {
-      opacity: 1,
-      scale: 1.5,
-      rotation: 45,
-      duration: 0.25,
-      ease: 'power2.out',
+      scale: 1,
+      x: 0,
+      duration: 0.15,
+      ease: 'power2.in',
     },
     '-=0.25'
   );
 
-  // Create particle trails for each target hit
-  targetPositions.forEach((targetPos, index) => {
-    const targetPixelPos = calculatePixelPosition(targetPos, cellSize);
-    tl.add(() => {
-      createSlashParticles(
-        { x: targetPixelPos.x + cellSize / 2, y: targetPixelPos.y + cellSize / 2 },
-        containerElement
-      );
-    }, 0.15 + index * 0.05);
+  // Impact - arrow disappears, small flash
+  tl.add(() => {
+    arrow.remove();
+    createArrowImpact(
+      { x: targetPixelPos.x + cellSize / 2, y: targetPixelPos.y + cellSize / 2 },
+      containerElement
+    );
   });
-
-  // Fade out slash effect
-  tl.to(slashEffect, {
-    opacity: 0,
-    scale: 2,
-    duration: 0.2,
-    ease: 'power2.in',
-    onComplete: () => {
-      slashEffect.remove();
-    },
-  });
-
-  // Return caster to normal
-  tl.to(
-    casterElement,
-    {
-      rotation: 0,
-      scale: 1,
-      duration: 0.2,
-      ease: 'back.out(2)',
-    },
-    '-=0.1'
-  );
 
   return tl;
 }
@@ -302,6 +488,70 @@ export function animateBuff(
   return tl;
 }
 
+// Helper: Create cleave impact effect
+function createCleaveImpact(
+  position: { x: number; y: number },
+  containerElement: HTMLElement,
+  cellSize: number
+): void {
+  // Flash effect
+  const flash = document.createElement('div');
+  flash.style.position = 'absolute';
+  flash.style.left = `${position.x}px`;
+  flash.style.top = `${position.y}px`;
+  flash.style.width = `${cellSize * 0.8}px`;
+  flash.style.height = `${cellSize * 0.8}px`;
+  flash.style.transform = 'translate(-50%, -50%)';
+  flash.style.borderRadius = '50%';
+  flash.style.background = 'radial-gradient(circle, #FFF 0%, #FFD700 40%, transparent 70%)';
+  flash.style.pointerEvents = 'none';
+  flash.style.zIndex = '1600';
+
+  containerElement.appendChild(flash);
+
+  gsap.fromTo(
+    flash,
+    { scale: 0.3, opacity: 1 },
+    {
+      scale: 1.2,
+      opacity: 0,
+      duration: 0.3,
+      ease: 'power2.out',
+      onComplete: () => flash.remove(),
+    }
+  );
+
+  // Impact particles
+  const particleCount = 10;
+  for (let i = 0; i < particleCount; i++) {
+    const particle = document.createElement('div');
+    particle.style.position = 'absolute';
+    particle.style.left = `${position.x}px`;
+    particle.style.top = `${position.y}px`;
+    particle.style.width = '4px';
+    particle.style.height = '4px';
+    particle.style.borderRadius = '50%';
+    particle.style.backgroundColor = i % 2 === 0 ? '#FFD700' : '#FFF';
+    particle.style.boxShadow = `0 0 4px ${i % 2 === 0 ? '#FFD700' : '#FFF'}`;
+    particle.style.pointerEvents = 'none';
+    particle.style.zIndex = '1600';
+
+    containerElement.appendChild(particle);
+
+    const angle = (Math.PI * 2 * i) / particleCount;
+    const distance = 15 + Math.random() * 15;
+
+    gsap.to(particle, {
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+      opacity: 0,
+      duration: 0.4 + Math.random() * 0.2,
+      ease: 'power2.out',
+      onComplete: () => particle.remove(),
+    });
+  }
+}
+
 // Helper: Create slash particles
 function createSlashParticles(
   position: { x: number; y: number },
@@ -332,6 +582,164 @@ function createSlashParticles(
       y: Math.sin(angle) * distance,
       opacity: 0,
       duration: 0.4,
+      ease: 'power2.out',
+      onComplete: () => particle.remove(),
+    });
+  }
+}
+
+// Helper: Create blood splash effect
+function createBloodSplash(
+  position: { x: number; y: number },
+  containerElement: HTMLElement,
+  cellSize: number
+): void {
+  // Central blood splash
+  const splash = document.createElement('div');
+  splash.style.position = 'absolute';
+  splash.style.left = `${position.x}px`;
+  splash.style.top = `${position.y}px`;
+  splash.style.width = `${cellSize * 0.6}px`;
+  splash.style.height = `${cellSize * 0.6}px`;
+  splash.style.transform = 'translate(-50%, -50%)';
+  splash.style.borderRadius = '50%';
+  splash.style.background = 'radial-gradient(circle, #DC143C 0%, #8B0000 50%, transparent 70%)';
+  splash.style.pointerEvents = 'none';
+  splash.style.zIndex = '1600';
+
+  containerElement.appendChild(splash);
+
+  gsap.fromTo(
+    splash,
+    { scale: 0.3, opacity: 1 },
+    {
+      scale: 1.2,
+      opacity: 0,
+      duration: 0.4,
+      ease: 'power2.out',
+      onComplete: () => splash.remove(),
+    }
+  );
+
+  // Blood droplets
+  for (let i = 0; i < 8; i++) {
+    const droplet = document.createElement('div');
+    droplet.style.position = 'absolute';
+    droplet.style.left = `${position.x}px`;
+    droplet.style.top = `${position.y}px`;
+    droplet.style.width = '6px';
+    droplet.style.height = '6px';
+    droplet.style.borderRadius = '50%';
+    droplet.style.backgroundColor = '#8B0000';
+    droplet.style.pointerEvents = 'none';
+    droplet.style.zIndex = '1600';
+
+    containerElement.appendChild(droplet);
+
+    const angle = (Math.PI * 2 * i) / 8;
+    const distance = 15 + Math.random() * 10;
+
+    gsap.to(droplet, {
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+      opacity: 0,
+      duration: 0.5,
+      ease: 'power2.out',
+      onComplete: () => droplet.remove(),
+    });
+  }
+}
+
+// Helper: Create lifesteal particles (blood flying back to caster)
+function createLifestealParticles(
+  fromPos: { x: number; y: number },
+  toPos: { x: number; y: number },
+  containerElement: HTMLElement
+): void {
+  // Create 5 blood particles that fly from target to caster
+  for (let i = 0; i < 5; i++) {
+    setTimeout(() => {
+      const particle = document.createElement('div');
+      particle.style.position = 'absolute';
+      particle.style.left = `${fromPos.x}px`;
+      particle.style.top = `${fromPos.y}px`;
+      particle.style.width = '8px';
+      particle.style.height = '8px';
+      particle.style.borderRadius = '50%';
+      particle.style.background = 'radial-gradient(circle, #FF0000 0%, #8B0000 100%)';
+      particle.style.boxShadow = '0 0 6px #FF0000';
+      particle.style.pointerEvents = 'none';
+      particle.style.zIndex = '1600';
+
+      containerElement.appendChild(particle);
+
+      gsap.to(particle, {
+        x: toPos.x - fromPos.x,
+        y: toPos.y - fromPos.y,
+        opacity: 0,
+        duration: 0.4,
+        ease: 'power2.in',
+        onComplete: () => particle.remove(),
+      });
+    }, i * 50);
+  }
+}
+
+// Helper: Create arrow impact effect
+function createArrowImpact(
+  position: { x: number; y: number },
+  containerElement: HTMLElement
+): void {
+  // Small impact flash
+  const flash = document.createElement('div');
+  flash.style.position = 'absolute';
+  flash.style.left = `${position.x}px`;
+  flash.style.top = `${position.y}px`;
+  flash.style.width = '20px';
+  flash.style.height = '20px';
+  flash.style.transform = 'translate(-50%, -50%)';
+  flash.style.borderRadius = '50%';
+  flash.style.background = 'radial-gradient(circle, #FFF 0%, #FFD700 40%, transparent 70%)';
+  flash.style.pointerEvents = 'none';
+  flash.style.zIndex = '1600';
+
+  containerElement.appendChild(flash);
+
+  gsap.fromTo(
+    flash,
+    { scale: 0.3, opacity: 1 },
+    {
+      scale: 1,
+      opacity: 0,
+      duration: 0.2,
+      ease: 'power2.out',
+      onComplete: () => flash.remove(),
+    }
+  );
+
+  // Small particles
+  for (let i = 0; i < 4; i++) {
+    const particle = document.createElement('div');
+    particle.style.position = 'absolute';
+    particle.style.left = `${position.x}px`;
+    particle.style.top = `${position.y}px`;
+    particle.style.width = '3px';
+    particle.style.height = '3px';
+    particle.style.borderRadius = '50%';
+    particle.style.backgroundColor = '#8B4513';
+    particle.style.pointerEvents = 'none';
+    particle.style.zIndex = '1600';
+
+    containerElement.appendChild(particle);
+
+    const angle = (Math.PI * 2 * i) / 4;
+    const distance = 10 + Math.random() * 10;
+
+    gsap.to(particle, {
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+      opacity: 0,
+      duration: 0.3,
       ease: 'power2.out',
       onComplete: () => particle.remove(),
     });
@@ -425,6 +833,51 @@ function createFireExplosion(
       onComplete: () => particle.remove(),
     });
   }
+}
+
+// Helper: Create tile flash highlight (for target and AOE tiles)
+export function createTileFlash(
+  position: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  color: string = '#FF4500',
+  delay: number = 0
+): void {
+  const pixelPos = calculatePixelPosition(position, cellSize);
+
+  const flash = document.createElement('div');
+  flash.style.position = 'absolute';
+  flash.style.left = `${pixelPos.x}px`;
+  flash.style.top = `${pixelPos.y}px`;
+  flash.style.width = `${cellSize}px`;
+  flash.style.height = `${cellSize}px`;
+  flash.style.background = `radial-gradient(circle, ${color}AA 0%, ${color}66 40%, transparent 70%)`;
+  flash.style.pointerEvents = 'none';
+  flash.style.zIndex = '1300';
+  flash.style.borderRadius = '4px';
+
+  containerElement.appendChild(flash);
+
+  gsap.fromTo(
+    flash,
+    { opacity: 0, scale: 0.8 },
+    {
+      opacity: 1,
+      scale: 1,
+      duration: 0.15,
+      delay,
+      ease: 'power2.out',
+      onComplete: () => {
+        // Fade out
+        gsap.to(flash, {
+          opacity: 0,
+          duration: 0.3,
+          ease: 'power2.in',
+          onComplete: () => flash.remove(),
+        });
+      },
+    }
+  );
 }
 
 // Helper: Create buff sparkles

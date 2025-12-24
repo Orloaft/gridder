@@ -1,9 +1,12 @@
 import { Hero, Enemy, UnitStats, StatusEffect, StatusEffectType, Ability, AbilityType } from '@/types/core.types';
 import { GridPosition } from '@/types/grid.types';
+import { GridManager } from './GridManager';
 
 // Battle event types
 export enum BattleEventType {
   BattleStart = 'battleStart',
+  WaveComplete = 'waveComplete', // Wave completed - pause for player decision
+  WaveStart = 'waveStart', // New wave of enemies entering
   Tick = 'tick', // Replaces TurnStart - fires each tick with cooldown updates
   Move = 'move',
   Attack = 'attack',
@@ -41,6 +44,7 @@ export interface BattleUnit {
   cooldownRate: number; // How much cooldown fills per tick (based on speed)
   abilities: Ability[]; // Available abilities
   abilityCooldowns: Map<string, number>; // Track cooldowns for each ability by ID
+  wave?: number; // Which wave this enemy belongs to (1-indexed, undefined for heroes)
 }
 
 export interface BattleState {
@@ -49,6 +53,9 @@ export interface BattleState {
   enemies: BattleUnit[];
   events: BattleEvent[];
   winner: 'heroes' | 'enemies' | null;
+  currentWave: number; // Current wave number (1-indexed)
+  totalWaves: number; // Total number of waves in battle
+  enemyWaves: Enemy[][]; // Remaining waves of enemies to spawn
 }
 
 /**
@@ -58,10 +65,19 @@ export interface BattleState {
  */
 export class BattleSimulator {
   private state: BattleState;
-  private positionSnapshot: Map<string, GridPosition>; // Snapshot of positions at start of tick
+  private gridManager: GridManager; // Single source of truth for grid occupancy
 
-  constructor(heroes: Hero[], enemies: Enemy[]) {
-    this.positionSnapshot = new Map();
+  constructor(heroes: Hero[], enemies: Enemy[] | Enemy[][]) {
+    // Initialize grid manager (8x8 grid)
+    this.gridManager = new GridManager(8, 8);
+
+    // Check if enemies is a wave array (array of arrays) or single wave
+    // Multi-wave format: enemies[0] is an array (Enemy[])
+    // Single-wave format: enemies[0] is an Enemy object with currentStats
+    const isMultiWave = Array.isArray(enemies[0]);
+    const enemyWaves: Enemy[][] = isMultiWave ? (enemies as Enemy[][]) : [enemies as Enemy[]];
+    const firstWave = enemyWaves[0];
+
     // Helper to calculate position with bounds checking
     // Spreads units across rows in a 2-column layout to avoid stacking
     const getHeroPosition = (index: number): GridPosition => {
@@ -111,6 +127,12 @@ export class BattleSimulator {
         abilityCooldowns.set(ability.id, 0); // All abilities start ready
       });
 
+      // Determine initial range based on abilities
+      // If hero has ranged abilities, set range to max ability range
+      const maxAbilityRange = h.abilities.length > 0
+        ? Math.max(...h.abilities.map(a => a.range || 1))
+        : 1;
+
       return {
         id: h.instanceId,
         name: h.name,
@@ -122,7 +144,7 @@ export class BattleSimulator {
         isHero: true,
         isAlive: true,
         position,
-        range: 1, // Default melee range
+        range: maxAbilityRange, // Set range based on abilities
         cooldown: 0, // Start at 0, will fill to 100
         cooldownRate: h.currentStats.speed / 10, // Divide by 10 for slower, more visible cooldowns
         abilities: h.abilities.map(a => ({ ...a })), // Copy abilities
@@ -130,7 +152,7 @@ export class BattleSimulator {
       };
     });
 
-    const enemyUnits: BattleUnit[] = enemies.map((e, index) => {
+    const enemyUnits: BattleUnit[] = firstWave.map((e, index) => {
       const position = getEnemyPosition(index);
 
       // Initialize ability cooldowns map (enemies may have abilities too)
@@ -139,6 +161,11 @@ export class BattleSimulator {
       enemyAbilities.forEach(ability => {
         abilityCooldowns.set(ability.id, 0); // All abilities start ready
       });
+
+      // Determine initial range based on abilities
+      const maxAbilityRange = enemyAbilities.length > 0
+        ? Math.max(...enemyAbilities.map(a => a.range || 1))
+        : 1;
 
       return {
         id: e.instanceId,
@@ -150,24 +177,28 @@ export class BattleSimulator {
         isHero: false,
         isAlive: true,
         position,
-        range: 1, // Default melee range
+        range: maxAbilityRange, // Set range based on abilities
         cooldown: 0, // Start at 0, will fill to 100
         cooldownRate: e.currentStats.speed / 10, // Divide by 10 for slower, more visible cooldowns
         abilities: enemyAbilities.map(a => ({ ...a })), // Copy abilities
         abilityCooldowns,
+        wave: 1, // First wave enemies
       };
     });
 
-    // DEBUG: Check for initial position collisions
+    // Register all units with GridManager
     const allUnits = [...heroUnits, ...enemyUnits];
-    const positionCounts = new Map<string, number>();
     allUnits.forEach(unit => {
-      const key = `${unit.position.row},${unit.position.col}`;
-      positionCounts.set(key, (positionCounts.get(key) || 0) + 1);
-    });
-    positionCounts.forEach((count, pos) => {
-      if (count > 1) {
-        console.error(`INITIAL STACKING: ${count} units at position ${pos}`);
+      const occupied = this.gridManager.occupy(unit.position, unit.id);
+      if (!occupied) {
+        console.error(`[BattleSimulator] Failed to occupy position for unit ${unit.name} at`, unit.position);
+        // Find nearest empty tile as fallback
+        const nearestEmpty = this.gridManager.findNearestEmptyTile(unit.position);
+        if (nearestEmpty) {
+          console.log(`[BattleSimulator] Moving ${unit.name} to nearest empty tile:`, nearestEmpty);
+          unit.position = nearestEmpty;
+          this.gridManager.occupy(nearestEmpty, unit.id);
+        }
       }
     });
 
@@ -177,11 +208,23 @@ export class BattleSimulator {
       enemies: enemyUnits,
       events: [],
       winner: null,
+      currentWave: 1,
+      totalWaves: enemyWaves.length,
+      enemyWaves: enemyWaves.slice(1), // Store remaining waves (skip first wave already spawned)
     };
+
+    console.log('[BattleSimulator] Initialized with:', {
+      heroes: heroUnits.length,
+      wave1Enemies: enemyUnits.length,
+      totalWaves: enemyWaves.length,
+      remainingWaves: enemyWaves.slice(1).length,
+      allEnemiesInState: enemyUnits.map(e => ({ name: e.name, wave: e.wave, pos: e.position }))
+    });
 
     this.addEvent(BattleEventType.BattleStart, {
       heroes: heroUnits.map((h) => h.name),
       enemies: enemyUnits.map((e) => e.name),
+      totalWaves: enemyWaves.length,
     });
   }
 
@@ -228,64 +271,22 @@ export class BattleSimulator {
     return Math.max(Math.abs(pos1.col - pos2.col), Math.abs(pos1.row - pos2.row));
   }
 
-  /**
-   * Check if a position is occupied by another unit
-   * During a tick, this uses the position snapshot from the start of the tick
-   * to prevent mid-tick race conditions
-   */
-  private isPositionOccupied(position: GridPosition, excludeUnit?: BattleUnit): boolean {
-    // IMPORTANT: Check ALL units (including dead ones in state arrays)
-    // because during the same tick, a unit might die but still be in the arrays
-    const allUnits = [...this.state.heroes, ...this.state.enemies];
-
-    // Use position snapshot if available (during tick processing)
-    // Otherwise use current positions (for initial setup)
-    const useSnapshot = this.positionSnapshot.size > 0;
-
-    const occupied = allUnits.some(u => {
-      // Compare by ID instead of reference to handle any object cloning issues
-      if ((excludeUnit && u.id === excludeUnit.id) || !u.isAlive) return false;
-
-      // Use snapshot position if available, otherwise use current position
-      const unitPos = useSnapshot ? this.positionSnapshot.get(u.id) : u.position;
-      if (!unitPos) return false;
-
-      return unitPos.row === position.row && unitPos.col === position.col;
-    });
-
-    return occupied;
-  }
 
   /**
    * Move unit closer to target, avoiding occupied spaces
-   * Uses improved pathfinding that can navigate around obstacles
+   * Uses GridManager for collision-aware pathfinding
    */
   private moveTowards(unit: BattleUnit, target: BattleUnit): void {
     const oldPosition = { ...unit.position };
 
-    // Try all 8 adjacent positions (including diagonals)
-    const allPossibleMoves: GridPosition[] = [
-      // Cardinal directions
-      { row: unit.position.row, col: unit.position.col + 1 }, // Right
-      { row: unit.position.row, col: unit.position.col - 1 }, // Left
-      { row: unit.position.row + 1, col: unit.position.col }, // Down
-      { row: unit.position.row - 1, col: unit.position.col }, // Up
-      // Diagonals
-      { row: unit.position.row + 1, col: unit.position.col + 1 }, // Down-Right
-      { row: unit.position.row + 1, col: unit.position.col - 1 }, // Down-Left
-      { row: unit.position.row - 1, col: unit.position.col + 1 }, // Up-Right
-      { row: unit.position.row - 1, col: unit.position.col - 1 }, // Up-Left
-    ];
+    // Get all valid adjacent positions (8-directional)
+    const allPossibleMoves = this.gridManager.getAdjacentPositionsWithDiagonals(unit.position);
 
-    // Filter out occupied positions and positions outside grid bounds (0-7)
-    const validMoves = allPossibleMoves.filter(pos => {
-      const inBounds = pos.row >= 0 && pos.row <= 7 && pos.col >= 0 && pos.col <= 7;
-      const notOccupied = !this.isPositionOccupied(pos, unit);
-      return inBounds && notOccupied;
-    });
+    // Filter to walkable positions only (GridManager checks bounds and occupancy)
+    const validMoves = allPossibleMoves.filter(pos => this.gridManager.isWalkable(pos, unit.id));
 
     if (validMoves.length === 0) {
-      // No valid moves, unit is blocked
+      // No valid moves, unit is completely blocked
       return;
     }
 
@@ -330,23 +331,12 @@ export class BattleSimulator {
     const shouldMove = distIncrease <= 1; // Allow moving up to 1 step farther to navigate around obstacles
 
     if (shouldMove) {
-      // Clamp position to ensure it stays within grid bounds (extra safety check)
-      const clampedMove = this.clampPosition(bestMove);
+      // Attempt atomic move through GridManager
+      const moveSuccess = this.gridManager.move(unit.id, oldPosition, bestMove);
 
-      // Triple-check: valid bounds, not occupied
-      const isValid = clampedMove.row >= 0 && clampedMove.row <= 7 &&
-                      clampedMove.col >= 0 && clampedMove.col <= 7;
-      const isNotOccupied = !this.isPositionOccupied(clampedMove, unit);
-
-      if (isValid && isNotOccupied) {
-        // CRITICAL: Update snapshot BEFORE updating actual position
-        // This ensures subsequent units in the same tick see the new position
-        if (this.positionSnapshot.has(unit.id)) {
-          this.positionSnapshot.set(unit.id, { ...clampedMove });
-        }
-
+      if (moveSuccess) {
         // Update unit's actual position
-        unit.position = clampedMove;
+        unit.position = bestMove;
 
         // Add movement event
         this.addEvent(BattleEventType.Move, {
@@ -356,6 +346,7 @@ export class BattleSimulator {
           to: { ...unit.position },
         });
       }
+      // If move failed, unit stays in place (tile became occupied between checks)
     }
   }
 
@@ -383,6 +374,8 @@ export class BattleSimulator {
           // Check for death from DoT
           if (unit.stats.hp <= 0) {
             unit.isAlive = false;
+            // Vacate grid position in GridManager
+            this.gridManager.vacate(unit.position);
             this.addEvent(BattleEventType.Death, {
               unit: unit.name,
               unitId: unit.id,
@@ -415,8 +408,14 @@ export class BattleSimulator {
    * Recalculate unit stats based on active status effects
    */
   private recalculateStats(unit: BattleUnit): void {
+    // Preserve current HP before recalculating
+    const currentHp = unit.stats.hp;
+
     // Start with base stats
     unit.stats = { ...unit.baseStats };
+
+    // Restore current HP (don't reset HP when recalculating)
+    unit.stats.hp = currentHp;
 
     // Apply all active status effects
     for (const effect of unit.statusEffects) {
@@ -510,6 +509,42 @@ export class BattleSimulator {
   }
 
   /**
+   * Decrement ability cooldowns after a unit takes an action
+   */
+  private decrementAbilityCooldowns(unit: BattleUnit): void {
+    unit.abilityCooldowns.forEach((cooldown, abilityId) => {
+      if (cooldown > 0) {
+        unit.abilityCooldowns.set(abilityId, cooldown - 1);
+      }
+    });
+  }
+
+  /**
+   * Get the maximum range of any ready ability the unit has
+   * Returns the longest range of ready abilities, or 1 (melee) if no abilities are ready
+   */
+  private getEffectiveRange(unit: BattleUnit): number {
+    // Check if unit has any abilities
+    if (unit.abilities.length === 0) {
+      return 1; // No abilities, basic melee range
+    }
+
+    // Find ready offensive abilities
+    const readyAbilities = unit.abilities.filter(ability => {
+      const cooldown = unit.abilityCooldowns.get(ability.id) || 0;
+      return cooldown === 0 && ability.type === AbilityType.Offensive;
+    });
+
+    if (readyAbilities.length === 0) {
+      return 1; // No ready abilities, fall back to basic melee attack range
+    }
+
+    // Return the maximum range of ready abilities
+    const maxAbilityRange = Math.max(...readyAbilities.map(a => a.range || 1));
+    return maxAbilityRange;
+  }
+
+  /**
    * Attempt to use an ability if one is available and ready
    * Returns true if an ability was used, false otherwise
    */
@@ -519,20 +554,99 @@ export class BattleSimulator {
       return false;
     }
 
-    // Find ready offensive abilities
+    // Find all ready abilities (both offensive and support)
     const readyAbilities = attacker.abilities.filter(ability => {
       const cooldown = attacker.abilityCooldowns.get(ability.id) || 0;
-      return cooldown === 0 && ability.type === AbilityType.Offensive;
+      return cooldown === 0;
     });
 
     if (readyAbilities.length === 0) {
       return false;
     }
 
-    // Use the first ready ability (in the future, could add logic to choose best ability)
-    const ability = readyAbilities[0];
+    // Prioritize support/heal abilities if allies need healing
+    const supportAbilities = readyAbilities.filter(a => a.type === AbilityType.Support);
+    if (supportAbilities.length > 0) {
+      // Check if any heal abilities are available
+      const healAbilities = supportAbilities.filter(a =>
+        a.effects.some(e => e.type === 'heal')
+      );
+
+      if (healAbilities.length > 0) {
+        // Check if any allies need healing (below 99% HP - heal even minor damage)
+        const allies = attacker.isHero
+          ? this.state.heroes.filter(h => h.isAlive)
+          : this.state.enemies.filter(e => e.isAlive);
+
+        const needsHealing = allies.some(ally =>
+          ally.stats.hp < ally.baseStats.maxHp * 0.99
+        );
+
+        // If allies need healing, prioritize heal abilities
+        if (needsHealing) {
+          const ability = healAbilities[0];
+
+          // Log ability usage FIRST (so animation starts before effects)
+          this.addEvent(BattleEventType.AbilityUsed, {
+            attacker: attacker.name,
+            attackerId: attacker.id,
+            abilityName: ability.name,
+            abilityId: ability.id,
+          });
+
+          // Process heal effects
+          let abilityActuallyUsed = false;
+          for (const effect of ability.effects) {
+            if (effect.type === 'heal') {
+              // Heal allies
+              abilityActuallyUsed = true;
+
+              const healAmount = effect.value || 0;
+              for (const ally of allies) {
+                const actualHeal = Math.min(healAmount, ally.baseStats.maxHp - ally.stats.hp);
+                if (actualHeal > 0) {
+                  ally.stats.hp = Math.min(ally.baseStats.maxHp, ally.stats.hp + healAmount);
+                  this.addEvent(BattleEventType.Heal, {
+                    unit: ally.name,
+                    unitId: ally.id,
+                    amount: Math.floor(actualHeal),
+                    source: 'ability',
+                    abilityName: ability.name,
+                  });
+                }
+              }
+            }
+          }
+
+          // Only use ability if it actually affected something
+          if (abilityActuallyUsed) {
+            // Set ability cooldown
+            attacker.abilityCooldowns.set(ability.id, ability.cooldown);
+            return true;
+          }
+        }
+      }
+    }
+
+    // Otherwise use offensive abilities
+    const offensiveAbilities = readyAbilities.filter(a => a.type === AbilityType.Offensive);
+    if (offensiveAbilities.length === 0) {
+      return false;
+    }
+
+    // Use the first ready offensive ability
+    const ability = offensiveAbilities[0];
+
+    // Log ability usage FIRST (so animation starts before effects)
+    this.addEvent(BattleEventType.AbilityUsed, {
+      attacker: attacker.name,
+      attackerId: attacker.id,
+      abilityName: ability.name,
+      abilityId: ability.id,
+    });
 
     // Process ability effects
+    let abilityActuallyUsed = false;
     for (const effect of ability.effects) {
       if (effect.type === 'damage') {
         // Determine targets based on target type
@@ -546,23 +660,103 @@ export class BattleSimulator {
             return currentDist < closestDist ? current : closest;
           })];
         } else if (effect.targetType === 'aoe' && effect.radius) {
-          // AOE - find all targets within radius of closest enemy
-          const primaryTarget = targets.reduce((closest, current) => {
-            const closestDist = this.getDistance(attacker.position, closest.position);
-            const currentDist = this.getDistance(attacker.position, current.position);
-            return currentDist < closestDist ? current : closest;
-          });
+          // Special handling for blade_cleave - cleave arc pattern
+          if (ability.id === 'blade_cleave') {
+            // Blade cleave: hit 1 adjacent enemy, then up to 2 enemies adjacent to that enemy AND the hero
+            const primaryTarget = targets.reduce((closest, current) => {
+              const closestDist = this.getDistance(attacker.position, closest.position);
+              const currentDist = this.getDistance(attacker.position, current.position);
+              return currentDist < closestDist ? current : closest;
+            });
 
-          affectedTargets = targets.filter(t => {
-            const dist = this.getDistance(primaryTarget.position, t.position);
-            return dist <= (effect.radius || 0);
-          });
+            // Start with primary target (must be adjacent to hero)
+            if (this.getDistance(attacker.position, primaryTarget.position) <= 1) {
+              affectedTargets.push(primaryTarget);
+
+              // Find up to 2 additional targets that are:
+              // 1. Adjacent to the primary target (distance <= 1)
+              // 2. Also adjacent to the hero (distance <= 1)
+              const secondaryTargets = targets.filter(t => {
+                if (t.id === primaryTarget.id) return false; // Don't include primary target again
+                const adjacentToPrimary = this.getDistance(t.position, primaryTarget.position) <= 1;
+                const adjacentToHero = this.getDistance(t.position, attacker.position) <= 1;
+                return adjacentToPrimary && adjacentToHero;
+              });
+
+              // Add up to 2 secondary targets
+              affectedTargets.push(...secondaryTargets.slice(0, 2));
+            }
+          } else if (ability.id === 'fireball') {
+            // Special handling for fireball - 2x2 area instead of circular radius
+            const abilityRange = ability.range || 1;
+
+            // Filter targets within range
+            const targetsInRange = targets.filter(t => {
+              const dist = this.getDistance(attacker.position, t.position);
+              return dist <= abilityRange;
+            });
+
+            if (targetsInRange.length > 0) {
+              // Find closest target within range
+              const primaryTarget = targetsInRange.reduce((closest, current) => {
+                const closestDist = this.getDistance(attacker.position, closest.position);
+                const currentDist = this.getDistance(attacker.position, current.position);
+                return currentDist < closestDist ? current : closest;
+              });
+
+              // Apply 2x2 area effect centered on primary target
+              const fireballTiles = [
+                primaryTarget.position,
+                { row: primaryTarget.position.row + 1, col: primaryTarget.position.col },
+                { row: primaryTarget.position.row, col: primaryTarget.position.col + 1 },
+                { row: primaryTarget.position.row + 1, col: primaryTarget.position.col + 1 },
+              ];
+
+              affectedTargets = targets.filter(t =>
+                fireballTiles.some(tile => tile.row === t.position.row && tile.col === t.position.col)
+              );
+            }
+          } else {
+            // Standard AOE - find targets within range, then apply AOE around closest
+            const abilityRange = ability.range || 1; // Default to melee range
+
+            // Filter targets that are within the ability's range
+            const targetsInRange = targets.filter(t => {
+              const dist = this.getDistance(attacker.position, t.position);
+              return dist <= abilityRange;
+            });
+
+            if (targetsInRange.length > 0) {
+              // Find closest target within range
+              const primaryTarget = targetsInRange.reduce((closest, current) => {
+                const closestDist = this.getDistance(attacker.position, closest.position);
+                const currentDist = this.getDistance(attacker.position, current.position);
+                return currentDist < closestDist ? current : closest;
+              });
+
+              // Apply AOE effect to all enemies within radius of the primary target
+              affectedTargets = targets.filter(t => {
+                const dist = this.getDistance(primaryTarget.position, t.position);
+                return dist <= (effect.radius || 0);
+              });
+            }
+          }
         }
 
+        // If no targets were affected, ability cannot be used
+        if (affectedTargets.length === 0) {
+          return false;
+        }
+
+        // Mark ability as actually used (targets found)
+        abilityActuallyUsed = true;
+
         // Apply damage to all affected targets
+        let totalDamageDealt = 0; // Track total damage for lifesteal calculation
         for (const target of affectedTargets) {
           const damage = effect.value || 0;
           target.stats.hp = Math.max(0, target.stats.hp - damage);
+          totalDamageDealt += damage;
 
           this.addEvent(BattleEventType.Damage, {
             target: target.name,
@@ -576,28 +770,144 @@ export class BattleSimulator {
           // Check for death
           if (target.stats.hp <= 0) {
             target.isAlive = false;
+            // Vacate grid position in GridManager
+            this.gridManager.vacate(target.position);
             this.addEvent(BattleEventType.Death, {
               unit: target.name,
               unitId: target.id,
             });
           }
         }
-      } else if (effect.type === 'status' && effect.statusType && effect.duration) {
-        // Apply status effect to target
-        const target = targets.reduce((closest, current) => {
-          const closestDist = this.getDistance(attacker.position, closest.position);
-          const currentDist = this.getDistance(attacker.position, current.position);
-          return currentDist < closestDist ? current : closest;
-        });
 
-        this.applyStatusEffect(target, effect.statusType, effect.duration, {
-          damagePerTick: effect.damagePerTick,
-        });
+        // Check if ability has a lifesteal effect (separate effect in the effects array)
+        const lifestealEffect = ability.effects.find(e => e.type === 'lifesteal');
+        if (lifestealEffect && lifestealEffect.value && totalDamageDealt > 0) {
+          const healAmount = totalDamageDealt * lifestealEffect.value;
+          attacker.stats.hp = Math.min(attacker.baseStats.maxHp, attacker.stats.hp + healAmount);
+          this.addEvent(BattleEventType.Heal, {
+            unit: attacker.name,
+            unitId: attacker.id,
+            amount: Math.floor(healAmount),
+            source: 'ability_lifesteal',
+            abilityName: ability.name,
+          });
+        }
+      } else if (effect.type === 'lifesteal') {
+        // Lifesteal effect is handled with damage effect above
+        // Mark as used so ability triggers
+        abilityActuallyUsed = true;
+      } else if (effect.type === 'status' && effect.statusType && effect.duration) {
+        // Apply status effect - can be single target or AOE
+        let affectedTargets: BattleUnit[] = [];
+
+        if (effect.targetType === 'aoe') {
+          if (ability.id === 'fireball') {
+            // Special handling for fireball - 2x2 area
+            const abilityRange = ability.range || 1;
+
+            // Filter targets within range
+            const targetsInRange = targets.filter(t => {
+              const dist = this.getDistance(attacker.position, t.position);
+              return dist <= abilityRange;
+            });
+
+            if (targetsInRange.length > 0) {
+              // Find closest target within range
+              const primaryTarget = targetsInRange.reduce((closest, current) => {
+                const closestDist = this.getDistance(attacker.position, closest.position);
+                const currentDist = this.getDistance(attacker.position, current.position);
+                return currentDist < closestDist ? current : closest;
+              });
+
+              // Apply 2x2 area effect centered on primary target
+              const fireballTiles = [
+                primaryTarget.position,
+                { row: primaryTarget.position.row + 1, col: primaryTarget.position.col },
+                { row: primaryTarget.position.row, col: primaryTarget.position.col + 1 },
+                { row: primaryTarget.position.row + 1, col: primaryTarget.position.col + 1 },
+              ];
+
+              affectedTargets = targets.filter(t =>
+                fireballTiles.some(tile => tile.row === t.position.row && tile.col === t.position.col)
+              );
+            }
+          } else {
+            // Standard AOE status effect
+            const abilityRange = ability.range || 1;
+
+            // Filter targets within range
+            const targetsInRange = targets.filter(t => {
+              const dist = this.getDistance(attacker.position, t.position);
+              return dist <= abilityRange;
+            });
+
+            if (targetsInRange.length > 0) {
+              // Find closest target within range
+              const primaryTarget = targetsInRange.reduce((closest, current) => {
+                const closestDist = this.getDistance(attacker.position, closest.position);
+                const currentDist = this.getDistance(attacker.position, current.position);
+                return currentDist < closestDist ? current : closest;
+              });
+
+              // Apply status to all enemies within radius of primary target
+              affectedTargets = targets.filter(t => {
+                const dist = this.getDistance(primaryTarget.position, t.position);
+                return dist <= (effect.radius || 0);
+              });
+            }
+          }
+        } else {
+          // Single target status effect
+          affectedTargets = [targets.reduce((closest, current) => {
+            const closestDist = this.getDistance(attacker.position, closest.position);
+            const currentDist = this.getDistance(attacker.position, current.position);
+            return currentDist < closestDist ? current : closest;
+          })];
+        }
+
+        // If no targets were affected, ability cannot be used
+        if (affectedTargets.length === 0) {
+          return false;
+        }
+
+        // Mark ability as actually used (targets found)
+        abilityActuallyUsed = true;
+
+        // Apply status effect to all affected targets
+        for (const target of affectedTargets) {
+          this.applyStatusEffect(target, effect.statusType, effect.duration, {
+            damagePerTick: effect.damagePerTick,
+          });
+        }
+      } else if (effect.type === 'heal') {
+        // Heal allies
+        const allies = attacker.isHero
+          ? this.state.heroes.filter(h => h.isAlive)
+          : this.state.enemies.filter(e => e.isAlive);
+
+        abilityActuallyUsed = true; // Heals always succeed if we have allies
+
+        const healAmount = effect.value || 0;
+        for (const ally of allies) {
+          const actualHeal = Math.min(healAmount, ally.baseStats.maxHp - ally.stats.hp);
+          if (actualHeal > 0) {
+            ally.stats.hp = Math.min(ally.baseStats.maxHp, ally.stats.hp + healAmount);
+            this.addEvent(BattleEventType.Heal, {
+              unit: ally.name,
+              unitId: ally.id,
+              amount: Math.floor(actualHeal),
+              source: 'ability',
+              abilityName: ability.name,
+            });
+          }
+        }
       } else if (effect.type === 'buff') {
         // Apply buff to allies
         const allies = attacker.isHero
           ? this.state.heroes.filter(h => h.isAlive)
           : this.state.enemies.filter(e => e.isAlive);
+
+        abilityActuallyUsed = true; // Buffs always succeed if we have allies
 
         for (const ally of allies) {
           if (effect.statModifier) {
@@ -611,13 +921,10 @@ export class BattleSimulator {
       }
     }
 
-    // Log ability usage
-    this.addEvent(BattleEventType.AbilityUsed, {
-      attacker: attacker.name,
-      attackerId: attacker.id,
-      abilityName: ability.name,
-      abilityId: ability.id,
-    });
+    // Only use ability if it actually affected something
+    if (!abilityActuallyUsed) {
+      return false;
+    }
 
     // Set ability cooldown
     attacker.abilityCooldowns.set(ability.id, ability.cooldown);
@@ -637,12 +944,14 @@ export class BattleSimulator {
 
     // Check if battle ended from status effects
     if (this.checkBattleEnd()) {
-      this.positionSnapshot.clear();
       return;
     }
 
-    // Get all alive units
-    const allUnits = [...this.state.heroes, ...this.state.enemies].filter(u => u.isAlive);
+    // Get all alive units (only include enemies from spawned waves)
+    const allUnits = [
+      ...this.state.heroes.filter(u => u.isAlive),
+      ...this.state.enemies.filter(u => u.isAlive && (!u.wave || u.wave <= this.state.currentWave))
+    ];
 
     // Safety check: Ensure all unit positions are within bounds
     // This catches any edge cases where positions might have gone out of bounds
@@ -650,24 +959,13 @@ export class BattleSimulator {
       unit.position = this.clampPosition(unit.position);
     }
 
-    // CRITICAL: Create position snapshot at the start of the tick
-    // This prevents race conditions when multiple units act in the same tick
-    this.positionSnapshot.clear();
-    allUnits.forEach(unit => {
-      this.positionSnapshot.set(unit.id, { ...unit.position });
-    });
-
     // Advance cooldowns for all units
     const cooldownUpdates: any[] = [];
     for (const unit of allUnits) {
       unit.cooldown = Math.min(100, unit.cooldown + unit.cooldownRate);
 
-      // Decrement ability cooldowns
-      unit.abilityCooldowns.forEach((cooldown, abilityId) => {
-        if (cooldown > 0) {
-          unit.abilityCooldowns.set(abilityId, cooldown - 1);
-        }
-      });
+      // Ability cooldowns are now action-based, not tick-based
+      // They will be decremented when the unit takes an action (move/attack/ability)
 
       cooldownUpdates.push({
         unitId: unit.id,
@@ -700,7 +998,6 @@ export class BattleSimulator {
 
       // Check if battle is already over
       if (this.checkBattleEnd()) {
-        this.positionSnapshot.clear();
         return;
       }
 
@@ -720,11 +1017,45 @@ export class BattleSimulator {
 
       const distance = this.getDistance(attacker.position, target.position);
 
-      // Move towards target if out of range
-      if (distance > attacker.range) {
+      // Get effective range (considers ready abilities)
+      const effectiveRange = this.getEffectiveRange(attacker);
+
+      // Check if this unit is a support healer (War Cleric) - they should avoid moving toward enemies
+      const isSupportHealer = attacker.abilities.some(a =>
+        a.type === AbilityType.Support && a.effects.some(e => e.type === 'heal')
+      );
+
+      // Support healers always try to heal first, regardless of range
+      if (isSupportHealer) {
+        const usedAbility = this.tryUseAbility(attacker, targets);
+        if (usedAbility) {
+          // Reset cooldown after using ability
+          attacker.cooldown = 0;
+          // Decrement ability cooldowns (using ability counts as an action)
+          this.decrementAbilityCooldowns(attacker);
+
+          // Check if battle ended from ability usage
+          if (this.checkBattleEnd()) {
+            return;
+          }
+          continue;
+        }
+
+        // If no heal was used and enemies are out of range, skip turn (stay at back)
+        if (distance > effectiveRange) {
+          attacker.cooldown = 0;
+          this.decrementAbilityCooldowns(attacker);
+          continue;
+        }
+      }
+
+      // Move towards target if out of range (unless this is a support healer)
+      if (distance > effectiveRange && !isSupportHealer) {
         this.moveTowards(attacker, target);
         // Reset cooldown after moving
         attacker.cooldown = 0;
+        // Decrement ability cooldowns (moving counts as an action)
+        this.decrementAbilityCooldowns(attacker);
         continue;
       }
 
@@ -733,10 +1064,11 @@ export class BattleSimulator {
       if (usedAbility) {
         // Reset cooldown after using ability
         attacker.cooldown = 0;
+        // Decrement ability cooldowns (using ability counts as an action)
+        this.decrementAbilityCooldowns(attacker);
 
         // Check if battle ended from ability usage
         if (this.checkBattleEnd()) {
-          this.positionSnapshot.clear();
           return;
         }
         continue;
@@ -760,6 +1092,8 @@ export class BattleSimulator {
 
         // Reset cooldown after missing
         attacker.cooldown = 0;
+        // Decrement ability cooldowns (missing still counts as an action)
+        this.decrementAbilityCooldowns(attacker);
         continue;
       }
 
@@ -819,10 +1153,14 @@ export class BattleSimulator {
 
       // Reset cooldown after attacking
       attacker.cooldown = 0;
+      // Decrement ability cooldowns (attacking counts as an action)
+      this.decrementAbilityCooldowns(attacker);
 
       // Check if target died
       if (target.stats.hp <= 0) {
         target.isAlive = false;
+        // Vacate grid position in GridManager
+        this.gridManager.vacate(target.position);
         this.addEvent(BattleEventType.Death, {
           unit: target.name,
           unitId: target.id,
@@ -830,53 +1168,28 @@ export class BattleSimulator {
 
         // Check if battle ended
         if (this.checkBattleEnd()) {
-          // Clear snapshot before returning
-          this.positionSnapshot.clear();
           return;
         }
       }
     }
 
-    // CRITICAL: Clear position snapshot at the end of the tick
-    // All units have acted, so snapshot is no longer needed
-    this.positionSnapshot.clear();
-
-    // DEBUG: Verify no stacking at end of tick
-    this.verifyNoStacking();
+    // DEBUG: Verify no stacking at end of tick using GridManager
+    const violations = this.gridManager.verifyNoStacking();
+    if (violations.length > 0) {
+      console.error(`[BattleSimulator] Stacking violations detected at tick ${this.state.tick}:`, violations);
+    }
   }
 
   /**
-   * Debug method to verify no units are stacked on the same position
-   */
-  private verifyNoStacking(): void {
-    const aliveUnits = [...this.state.heroes, ...this.state.enemies].filter(u => u.isAlive);
-    const positionMap = new Map<string, BattleUnit[]>();
-
-    aliveUnits.forEach(unit => {
-      const key = `${unit.position.row},${unit.position.col}`;
-      if (!positionMap.has(key)) {
-        positionMap.set(key, []);
-      }
-      positionMap.get(key)!.push(unit);
-    });
-
-    positionMap.forEach((units, pos) => {
-      if (units.length > 1) {
-        console.error(`STACKING DETECTED at tick ${this.state.tick}!`, {
-          position: pos,
-          units: units.map(u => ({ name: u.name, id: u.id, isHero: u.isHero })),
-        });
-      }
-    });
-  }
-
-  /**
-   * Check if battle has ended
-   * Returns true if battle is over
+   * Check if battle has ended or if we should spawn a new wave
+   * Returns true if battle is completely over
    */
   private checkBattleEnd(): boolean {
     const heroesAlive = this.state.heroes.some((h) => h.isAlive);
-    const enemiesAlive = this.state.enemies.some((e) => e.isAlive);
+    // Only check enemies from spawned waves
+    const enemiesAlive = this.state.enemies.some((e) =>
+      e.isAlive && (!e.wave || e.wave <= this.state.currentWave)
+    );
 
     if (!heroesAlive) {
       this.state.winner = 'enemies';
@@ -885,12 +1198,186 @@ export class BattleSimulator {
     }
 
     if (!enemiesAlive) {
+      // Check if there are more waves to spawn
+      if (this.state.enemyWaves.length > 0) {
+        // Wave completed - add pause event for player decision
+        this.addEvent(BattleEventType.WaveComplete, {
+          waveNumber: this.state.currentWave,
+          totalWaves: this.state.totalWaves,
+          nextWaveNumber: this.state.currentWave + 1,
+        });
+
+        // Then spawn the next wave
+        this.spawnNextWave();
+        return false; // Battle continues with new wave
+      }
+
+      // No more waves - heroes win!
       this.state.winner = 'heroes';
       this.addEvent(BattleEventType.Victory, {});
       return true;
     }
 
     return false;
+  }
+
+  /**
+   * Spawn the next wave of enemies
+   */
+  private spawnNextWave(): void {
+    const nextWave = this.state.enemyWaves.shift();
+    if (!nextWave) return;
+
+    this.state.currentWave++;
+
+    console.log(`[spawnNextWave] Spawning wave ${this.state.currentWave} with ${nextWave.length} enemies`);
+
+    // Reset hero positions to starting positions before new wave
+    const getHeroPosition = (index: number): GridPosition => {
+      const row = 2 + Math.floor(index / 2);
+      const col = index % 2;
+
+      if (row > 7) {
+        const overflowIndex = index - 12;
+        return {
+          row: Math.floor(overflowIndex / 2),
+          col: overflowIndex % 2
+        };
+      }
+
+      return { row, col };
+    };
+
+    // Move all heroes back to their starting positions
+    const heroRepositioningEvents: any[] = [];
+    this.state.heroes.forEach((hero, index) => {
+      if (!hero.isAlive) return; // Don't reposition dead heroes
+
+      const startPosition = getHeroPosition(index);
+      const oldPosition = { ...hero.position };
+
+      // Only create movement event if position actually changed
+      if (oldPosition.row !== startPosition.row || oldPosition.col !== startPosition.col) {
+        // Update GridManager with atomic move
+        const moveSuccess = this.gridManager.move(hero.id, oldPosition, startPosition);
+        if (moveSuccess) {
+          hero.position = startPosition;
+          heroRepositioningEvents.push({
+            unitId: hero.id,
+            name: hero.name,
+            from: oldPosition,
+            to: startPosition,
+          });
+        } else {
+          console.error(`[spawnNextWave] Failed to reposition hero ${hero.name} from`, oldPosition, 'to', startPosition);
+        }
+      }
+    });
+
+    // Add repositioning events if any heroes moved
+    if (heroRepositioningEvents.length > 0) {
+      heroRepositioningEvents.forEach(event => {
+        this.addEvent(BattleEventType.Move, {
+          unit: event.name,
+          unitId: event.unitId,
+          from: event.from,
+          to: event.to,
+        });
+      });
+    }
+
+    // Helper function to get enemy position (same as constructor)
+    const getEnemyPosition = (index: number): GridPosition => {
+      const row = 2 + Math.floor(index / 2);
+      const col = 7 - (index % 2);
+
+      if (row > 7) {
+        const overflowIndex = index - 12;
+        return {
+          row: Math.floor(overflowIndex / 2),
+          col: 7 - (overflowIndex % 2)
+        };
+      }
+
+      return { row, col };
+    };
+
+    // Convert enemies to battle units (starting off-screen to the right at col 8)
+    const newEnemyUnits: BattleUnit[] = nextWave.map((e, index) => {
+      const finalPosition = getEnemyPosition(index);
+      const startPosition = { ...finalPosition, col: 8 }; // Start off-screen to the right
+
+      const abilityCooldowns = new Map<string, number>();
+      const enemyAbilities = e.abilities || [];
+      enemyAbilities.forEach(ability => {
+        abilityCooldowns.set(ability.id, 0);
+      });
+
+      const maxAbilityRange = enemyAbilities.length > 0
+        ? Math.max(...enemyAbilities.map(a => a.range || 1))
+        : 1;
+
+      return {
+        id: e.instanceId,
+        name: e.name,
+        spritePath: e.spritePath,
+        baseStats: { ...e.currentStats },
+        stats: { ...e.currentStats },
+        statusEffects: [],
+        isHero: false,
+        isAlive: true,
+        position: startPosition, // Start off-screen
+        range: maxAbilityRange,
+        cooldown: 0,
+        cooldownRate: e.currentStats.speed / 10,
+        abilities: enemyAbilities.map(a => ({ ...a })),
+        abilityCooldowns,
+        wave: this.state.currentWave, // Track which wave this enemy belongs to
+      };
+    });
+
+    // Add new enemies to battle state
+    this.state.enemies.push(...newEnemyUnits);
+
+    console.log(`[spawnNextWave] Added ${newEnemyUnits.length} enemies to state. Total enemies in state: ${this.state.enemies.length}`);
+    console.log(`[spawnNextWave] New enemies:`, newEnemyUnits.map(e => ({ name: e.name, wave: e.wave, pos: e.position, hp: e.stats.hp })));
+
+    // Register new enemies with GridManager at their FINAL positions (not off-screen)
+    // This is important because GridManager needs to know about them for collision detection
+    // Even though they visually start off-screen, their logical grid position is on-screen
+    newEnemyUnits.forEach((enemy, index) => {
+      const finalPosition = getEnemyPosition(index);
+
+      // Occupy the final position in GridManager
+      const occupied = this.gridManager.occupy(finalPosition, enemy.id);
+      if (!occupied) {
+        console.error(`[spawnNextWave] Failed to occupy position for enemy ${enemy.name} at`, finalPosition);
+        // Find nearest empty tile as fallback
+        const nearestEmpty = this.gridManager.findNearestEmptyTile(finalPosition);
+        if (nearestEmpty) {
+          console.log(`[spawnNextWave] Moving ${enemy.name} to nearest empty tile:`, nearestEmpty);
+          // Update the enemy's final position to use the nearest empty tile
+          this.gridManager.occupy(nearestEmpty, enemy.id);
+        }
+      }
+
+      // Update enemy position to final position immediately (for simulation logic)
+      // The rendering layer will handle the slide-in animation separately
+      enemy.position = finalPosition;
+    });
+
+    // Add wave start event with slide-in animations
+    // Note: positions are now updated, but UI will animate from col: 8 to final position
+    this.addEvent(BattleEventType.WaveStart, {
+      waveNumber: this.state.currentWave,
+      totalWaves: this.state.totalWaves,
+      enemies: newEnemyUnits.map((e, index) => ({
+        unitId: e.id,
+        name: e.name,
+        fromPosition: { ...e.position, col: 8 }, // Animation starts from off-screen
+        toPosition: getEnemyPosition(index), // Animation ends at final position
+      })),
+    });
   }
 
   /**

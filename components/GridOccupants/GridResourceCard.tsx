@@ -69,6 +69,18 @@ export function GridResourceCard({ resource, cellSize }: GridResourceCardProps) 
           <div style={{ fontSize: cellSize * 0.7 }}>{iconPath}</div>
         )}
       </div>
+
+      {/* Amount display at the top */}
+      <div className="absolute top-1 left-0 right-0 flex justify-center z-10">
+        <div className="bg-black/80 px-2 py-1 rounded border border-white/30">
+          <div
+            className="font-bold text-white text-center"
+            style={{ fontSize: cellSize * 0.15 }}
+          >
+            {resource.amount}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

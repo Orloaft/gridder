@@ -37,7 +37,7 @@ export function createPreBattleLayout(
     label: 'Back',
     icon: generateButtonIcon('back'),
     variant: 'secondary',
-    onClick: () => navigate(ScreenType.CampaignMap),
+    onClick: () => navigate(ScreenType.LocationMap),
     animationDelay: 0.1,
   });
 
@@ -49,6 +49,17 @@ export function createPreBattleLayout(
     content: stage.name,
     variant: 'info',
     animationDelay: 0.15,
+  });
+
+  // Gem counter at top right
+  occupants.push({
+    id: 'resource-gems',
+    type: GridOccupantType.Resource,
+    position: { row: 0, col: 7 },
+    resourceType: 'gems',
+    amount: playerGems,
+    icon: '💎',
+    animationDelay: 0.2,
   });
 
   // Row 1: Enemy Preview Label
@@ -83,11 +94,35 @@ export function createPreBattleLayout(
 
   // Row 4: Team Label
   const filledSlots = preBattleTeam.filter(id => id && id !== '').length;
+
+  // Debug: Check for orphaned hero IDs in preBattleTeam
+  const orphanedIds = preBattleTeam.filter(id => {
+    if (!id || id === '') return false;
+    return !availableHeroes.some(h => h.instanceId === id);
+  });
+
+  if (orphanedIds.length > 0) {
+    console.warn('[PreBattleLayout] Found orphaned hero IDs in preBattleTeam (heroes not in roster):', orphanedIds);
+  }
+
+  console.log('[PreBattleLayout] Debug info:', {
+    preBattleTeam,
+    filledSlots,
+    playerSlots: stage.playerSlots,
+    availableHeroes: availableHeroes.map(h => ({ id: h.instanceId, name: h.name })),
+    orphanedIds,
+  });
+
+  // Show helpful message if team has more heroes than slots
+  const teamLabelText = filledSlots > stage.playerSlots
+    ? `Your Team (${stage.playerSlots}/${stage.playerSlots}) - ${filledSlots - stage.playerSlots} in reserve`
+    : `Your Team (${filledSlots}/${stage.playerSlots})`;
+
   occupants.push({
     id: 'team-label',
     type: GridOccupantType.Decoration,
     position: { row: 4, col: 0 },
-    text: `Your Team (${filledSlots}/${stage.playerSlots})`,
+    text: teamLabelText,
     style: 'subtitle',
     animationDelay: 0.5,
   });
@@ -96,6 +131,12 @@ export function createPreBattleLayout(
   for (let i = 0; i < stage.playerSlots; i++) {
     const heroId = preBattleTeam[i];
     const hero = heroId ? availableHeroes.find((h) => h.instanceId === heroId) : undefined;
+
+    console.log(`[PreBattleLayout] Slot ${i}:`, {
+      heroId,
+      heroFound: !!hero,
+      heroName: hero?.name,
+    });
 
     if (hero && heroId) {
       // Show hero card (draggable)
@@ -198,8 +239,10 @@ export function createPreBattleLayout(
   });
 
   // Row 7: Available heroes to add (draggable)
-  const filledTeamSlots = preBattleTeam.filter(id => id && id !== '');
-  const availableToAdd = availableHeroes.filter((h) => !filledTeamSlots.includes(h.instanceId));
+  // Only filter out heroes that are ACTUALLY RENDERED in team slots
+  // If preBattleTeam has more heroes than playerSlots, the extra heroes should appear here
+  const renderedInTeamSlots = preBattleTeam.slice(0, stage.playerSlots).filter(id => id && id !== '');
+  const availableToAdd = availableHeroes.filter((h) => !renderedInTeamSlots.includes(h.instanceId));
 
   availableToAdd
     .slice(0, 8) // Show up to 8 heroes

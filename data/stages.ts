@@ -5,6 +5,7 @@
 import { Stage } from '@/types/progression.types';
 import { Difficulty } from '@/types/core.types';
 import { getLocationByStageId } from './locations';
+import { getDefaultLootConfig } from '@/utils/lootGenerator';
 
 // Enemy pool by tier (unlock as campaign progresses)
 const ENEMY_TIERS = {
@@ -122,11 +123,71 @@ function generateStage(stageId: number): Stage {
   const difficultyMultiplier = difficulty === Difficulty.Boss ? 1.5 :
                                difficulty === Difficulty.Hard ? 1.3 :
                                difficulty === Difficulty.Medium ? 1.1 : 1.0;
-  const stageMultiplier = 1 + (stageId / 512) * 0.5; // Up to 50% more enemies by end
+  const stageMultiplier = 1 + (stageId / 128) * 0.5; // Up to 50% more enemies by end
   const enemySlots = Math.floor(baseEnemyCount * difficultyMultiplier * stageMultiplier);
 
-  // Generate enemies
-  const enemies = generateEnemies(stageId, difficulty, enemySlots);
+  // Generate enemies - ALL LOCATIONS now have multi-wave encounters (since each location = 1 mission)
+  let enemies: string[] | string[][];
+
+  // Determine wave count based on difficulty and location
+  let waveCount: number;
+  if (difficulty === Difficulty.Tutorial) {
+    waveCount = 2; // Tutorial has 2 waves (gentle introduction)
+  } else if (difficulty === Difficulty.Boss) {
+    waveCount = Math.min(5, 3 + Math.floor(stageId / 64)); // Bosses have 3-5 waves
+  } else {
+    waveCount = Math.min(4, 2 + Math.floor(stageId / 32)); // Normal stages have 2-4 waves
+  }
+
+  // Add +1 wave for boss encounter at the end (all locations get a boss wave)
+  const totalWaves = waveCount + 1; // Regular waves + final boss wave
+  const baseEnemiesPerWave = Math.max(1, Math.floor(enemySlots / waveCount));
+
+  enemies = Array.from({ length: totalWaves }, (_, waveIndex) => {
+    const isFirstWave = waveIndex === 0;
+    const isBossWave = waveIndex === totalWaves - 1; // Last wave is always boss wave
+    const isRegularWave = !isFirstWave && !isBossWave;
+
+    let waveEnemyCount;
+
+    if (isBossWave) {
+      // BOSS WAVE: Spawn boss enemies based on location tier
+      const locationNumber = Math.floor((stageId - 1) / 16) + 1; // 1-8 for 8 locations
+      const bossPool = getAvailableEnemies(stageId, difficulty);
+
+      // Boss wave composition: 1-2 elite/boss enemies + some regular enemies
+      const eliteCount = Math.min(2, Math.floor(stageId / 32) + 1); // 1-3 elites based on location
+      const regularCount = Math.max(1, Math.floor(baseEnemiesPerWave * 0.5)); // Fewer regular enemies
+
+      // Generate boss wave with mix of elite and regular enemies
+      const bossEnemies: string[] = [];
+
+      // Add elite/boss enemies
+      for (let i = 0; i < eliteCount; i++) {
+        // Prefer boss enemies if available, otherwise use higher tier enemies
+        if (bossPool.includes('necromancer_boss')) {
+          bossEnemies.push('necromancer_boss');
+        } else {
+          // Use strongest available enemy from pool
+          const strongestEnemy = bossPool[bossPool.length - 1];
+          bossEnemies.push(strongestEnemy);
+        }
+      }
+
+      // Add regular enemies
+      for (let i = 0; i < regularCount; i++) {
+        bossEnemies.push(bossPool[Math.floor(Math.random() * bossPool.length)]);
+      }
+
+      return bossEnemies;
+    } else if (isFirstWave) {
+      waveEnemyCount = Math.max(1, Math.floor(baseEnemiesPerWave * 0.7)); // Start easier
+    } else {
+      waveEnemyCount = Math.max(1, Math.ceil(baseEnemiesPerWave * 1.2)); // Middle waves slightly harder
+    }
+
+    return generateEnemies(stageId, difficulty, waveEnemyCount);
+  });
 
   // Calculate rewards (scales with stage and difficulty)
   const baseGold = 20 + (stageId * 2);
@@ -156,6 +217,14 @@ function generateStage(stageId: number): Stage {
   const locationNumber = Math.floor((stageId - 1) / 64) + 1; // 1-8 for 8 locations
   const gemReward = isBoss ? 10 + (locationNumber * 5) : 0; // 15, 20, 25, 30, 35, 40, 45, 50 gems
 
+  // Get loot configuration based on difficulty
+  const difficultyString = difficulty === Difficulty.Tutorial ? 'tutorial' :
+                           difficulty === Difficulty.Easy ? 'easy' :
+                           difficulty === Difficulty.Medium ? 'medium' :
+                           difficulty === Difficulty.Hard ? 'hard' :
+                           difficulty === Difficulty.Boss ? 'boss' : 'easy';
+  const lootConfig = getDefaultLootConfig(difficultyString);
+
   return {
     id: stageId,
     name,
@@ -169,14 +238,15 @@ function generateStage(stageId: number): Stage {
       recruitChance: difficulty === Difficulty.Boss ? 0.6 : 0.3,
       gems: gemReward > 0 ? gemReward : undefined, // Only add gems property if boss
     },
+    lootConfig, // Add loot configuration for item drops
     isBoss,
     unlockRequirement: stageId === 1 ? undefined : stageId - 1,
   };
 }
 
-// Generate all 512 stages
+// Generate all 128 stages (8 locations × 16 stages each)
 export const CAMPAIGN_STAGES: Stage[] = Array.from(
-  { length: 512 },
+  { length: 128 },
   (_, index) => generateStage(index + 1)
 );
 

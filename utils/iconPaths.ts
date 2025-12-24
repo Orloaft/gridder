@@ -49,6 +49,7 @@ export const ICON_PATHS = {
   staffCloakman: '/icons/staffcloakman.PNG',
   swordman: '/icons/swordman.PNG',
   torchman: '/icons/torchman.PNG',
+  warCleric: '/icons/warcleric.PNG',
 
   // Enemies
   bat: '/icons/bat.PNG',
@@ -62,6 +63,7 @@ export const ICON_PATHS = {
   mermaiden: '/icons/mermaiden.PNG',
   plagueRat: '/icons/plague_rat.PNG',
   skinnyZombie: '/icons/skinnyzombie.PNG',
+  slime: '/icons/slime.PNG',
   spider: '/icons/spider.PNG',
   spiderHatchling: '/icons/spider_hatchling.PNG',
   spiderRat: '/icons/spider_rat.PNG',
@@ -83,6 +85,6 @@ export const ICON_CATEGORIES = {
   consumables: ['blueBottle', 'greenBottle', 'heart'] as IconKey[],
   resources: ['coin', 'orb', 'sack', 'star'] as IconKey[],
   ui: ['checkmark', 'cog', 'compass', 'crown', 'key', 'lock', 'map', 'openScroll', 'skull'] as IconKey[],
-  heroes: ['quester', 'paladin', 'necromancer', 'weakWizard', 'arcanerogue', 'arcaneHalberdman', 'armourSwordman', 'axeHandHornman', 'bloodyAxeman', 'bloodyKnifeman', 'darkKnifeman', 'darkman', 'halberdman', 'shieldman', 'staffCloakman', 'swordman', 'torchman'] as IconKey[],
-  enemies: ['bat', 'blackHulk', 'bluebottle', 'centipede', 'chimera', 'hobgob', 'hoodZombie', 'maggot', 'mermaiden', 'plagueRat', 'skinnyZombie', 'spider', 'spiderHatchling', 'spiderRat', 'strongZombie', 'succubus'] as IconKey[],
+  heroes: ['quester', 'paladin', 'necromancer', 'weakWizard', 'arcanerogue', 'arcaneHalberdman', 'armourSwordman', 'axeHandHornman', 'bloodyAxeman', 'bloodyKnifeman', 'darkKnifeman', 'darkman', 'halberdman', 'shieldman', 'staffCloakman', 'swordman', 'torchman', 'warCleric'] as IconKey[],
+  enemies: ['bat', 'blackHulk', 'bluebottle', 'centipede', 'chimera', 'hobgob', 'hoodZombie', 'maggot', 'mermaiden', 'plagueRat', 'skinnyZombie', 'slime', 'spider', 'spiderHatchling', 'spiderRat', 'strongZombie', 'succubus'] as IconKey[],
 };

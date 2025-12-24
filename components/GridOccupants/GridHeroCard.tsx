@@ -151,6 +151,18 @@ export function GridHeroCard({ hero, cellSize }: GridHeroCardProps) {
           }}
         />
       )}
+
+      {/* Lock overlay - shows when hero is locked */}
+      {hero.locked && (
+        <div className="absolute inset-0 bg-black/80 z-20 flex flex-col items-center justify-center">
+          <div className="text-4xl mb-2">🔒</div>
+          {hero.lockCost && (
+            <div className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded border border-yellow-500">
+              {hero.lockCost} {hero.lockCurrency === 'gems' ? '💎' : '💰'}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

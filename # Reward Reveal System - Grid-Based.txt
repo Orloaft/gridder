@@ -1,0 +1,846 @@
+# Reward Reveal System - Grid-Based Implementation
+
+## Design Philosophy
+All reward reveal animations are represented using the existing uniform grid cell system. Every visual element (gold counters, item slots, particles, etc.) exists as grid tiles, maintaining visual consistency with the rest of the game while delivering maximum juice and satisfaction.
+
+---
+
+## Grid Layout Specifications
+
+### Standard Reward Screen Grid
+**Recommended Grid Size:** 12×16 cells (or adapt to current game grid)
+
+**Layout Zones:**
+```
+┌─────────────────────────┐
+│   HEADER (Row 1-2)      │  Victory banner, wave count
+├─────────────────────────┤
+│   GOLD ZONE (Row 3-5)   │  Gold counter animation
+├─────────────────────────┤
+│   GEM ZONE (Row 6-8)    │  Gem counter animation
+├─────────────────────────┤
+│   CHEST ZONE (Row 9-10) │  Treasure chest visual
+├─────────────────────────┤
+│   LOOT SLOTS (Row 11-14)│  Item slot machines (3-5 slots)
+├─────────────────────────┤
+│   FOOTER (Row 15-16)    │  Continue button, summary
+└─────────────────────────┘
+```
+
+---
+
+## Phase-by-Phase Breakdown
+
+### Phase 0: Victory Transition (1 second)
+
+**Grid State:**
+- Entire grid fills with victory color (gold gradient)
+- Center cells pulse outward in wave pattern
+- Text tiles appear: "VICTORY!" or "WAVE [X] COMPLETE!"
+
+**Grid Animation:**
+```
+Frame 1: All cells flash white
+Frame 2-10: Gold gradient ripples from center outward
+Frame 11-20: "VICTORY" tiles fade in at rows 7-9
+```
+
+**Audio:** Triumphant fanfare, screen shake on initial flash
+
+---
+
+### Phase 1: Gold Counter Reveal (2-3 seconds)
+
+**Grid Layout:**
+```
+Row 3:  [  ] [  ] [💰] [💰] [💰] [  ] [  ]
+Row 4:  [  ] [GOLD COUNTER TILES ] [  ]
+Row 5:  [  ] [  ] [particles] [  ] [  ]
+```
+
+**Animation Sequence:**
+
+**Step 1 (0.5s):** Gold coin tiles spawn at top
+- 3-5 coin tiles (💰) drop from row 1 to row 3
+- Each coin tile bounces on landing
+- Coin tiles scale: 0.5x → 1.2x → 1.0x (bounce effect)
+
+**Step 2 (1.5-2s):** Counter tick-up
+- Number tiles in row 4 rapidly cycle through values
+- Start at 0, increment quickly to final gold amount
+- Use digit tiles: [0-9] in grid cells
+- Speed: 50-100ms per increment initially, slowing as it approaches final value
+
+**Example Counter Grid (4850g final):**
+```
+Frame 1:   [0] [0] [0] [0]
+Frame 10:  [1] [2] [5] [0]
+Frame 20:  [2] [8] [0] [0]
+Frame 30:  [4] [8] [5] [0]  (FINAL - locks with CHUNK sound)
+```
+
+**Step 3 (0.5s):** Lock-in effect
+- Final number tiles pulse/flash gold
+- Particle tiles burst outward from counter
+- Counter tiles briefly scale to 1.3x then return to 1.0x
+
+**Grid Particles:**
+- Small 1x1 gold sparkle tiles appear around counter
+- Move outward in cardinal/diagonal directions
+- Fade out after 0.5 seconds
+- 8-12 particle tiles total
+
+**Audio Cues:**
+- Coin drop: clink-clink-clink
+- Counter tick: ding-ding-ding (increasing pitch)
+- Lock-in: KA-CHUNK! + satisfying bass hit
+
+---
+
+### Phase 2: Gem Counter Reveal (2-3 seconds)
+
+**Grid Layout:**
+```
+Row 6:  [  ] [  ] [💎] [💎] [💎] [  ] [  ]
+Row 7:  [  ] [ GEM COUNTER TILES  ] [  ]
+Row 8:  [  ] [  ] [particles] [  ] [  ]
+```
+
+**Animation Sequence:**
+
+**Step 1 (0.5s):** Gem tiles spawn
+- 3-5 gem tiles (💎) spiral in from edges to row 6
+- Each gem rotates 360° during movement
+- Gems pulse with inner glow effect (alternate between two brightness states)
+
+**Step 2 (1.5-2s):** Counter tick-up
+- Similar to gold counter but SLOWER (more prestigious)
+- Each increment has more weight
+- Gems flash with each number change
+
+**Example Counter Grid (35 gems final):**
+```
+Frame 1:   [0] [0]
+Frame 10:  [1] [2]
+Frame 20:  [2] [6]
+Frame 30:  [3] [5]  (FINAL)
+```
+
+**Step 3 (0.5s):** Lock-in effect
+- Gem counter explodes with prismatic particle tiles
+- Rainbow colored 1x1 particles (6-8 colors)
+- Gems spin once more before settling
+
+**Grid Particles:**
+- 12-16 colorful sparkle tiles
+- Radial burst pattern from center
+- Each particle tile cycles through rainbow hues
+- Fade + move outward over 0.8 seconds
+
+**Audio Cues:**
+- Gem spawn: crystalline chime
+- Counter tick: higher pitched dings than gold
+- Lock-in: SHINE! + glass bell sound
+
+---
+
+### Phase 3: Chest Appearance (1 second)
+
+**Grid Layout:**
+```
+Row 9:   [  ] [  ] [CHEST TOP   ] [  ] [  ]
+Row 10:  [  ] [  ] [CHEST BOTTOM] [  ] [  ]
+```
+
+**Animation Sequence:**
+
+**Step 1 (0.3s):** Chest drop
+- Chest tiles (2×2 or 3×3 depending on grid size) drop from top
+- Start off-screen at row -2
+- Drop to row 9-10 with acceleration
+- Screen shake on impact
+
+**Step 2 (0.2s):** Bounce settle
+- Chest tiles bounce slightly (row 9.5 → 9 → 9.2 → 9)
+- Small dust particle tiles puff out from base
+
+**Step 3 (0.5s):** Anticipation
+- Chest tiles wiggle/shake
+- Glow tiles appear around chest edges
+- Lid tile separates slightly (teasing open)
+
+**Chest Visual States (Grid Tiles):**
+```
+Closed:     Shaking:    Opening:
+[─┬─]       [─╱─]       [──]  ← lid
+[├┼┤]       [╱┼╲]       [  ]  ← gap
+[└┴┘]       [└┴┘]       [└┴┘] ← base
+```
+
+**Audio Cues:**
+- Drop: THUD + bass rumble
+- Bounce: smaller thud
+- Shake: wooden creaking
+
+---
+
+### Phase 4: Item Slot Machine Reveals (Variable Length)
+
+**Grid Layout for 5 Loot Rolls:**
+```
+Row 11: [SLOT1] [  ] [SLOT2] [  ] [SLOT3] [  ] [SLOT4] [  ] [SLOT5]
+Row 12: [reel ] [  ] [reel ] [  ] [reel ] [  ] [reel ] [  ] [reel ]
+Row 13: [item ] [  ] [item ] [  ] [item ] [  ] [item ] [  ] [item ]
+Row 14: [label] [  ] [label] [  ] [label] [  ] [label] [  ] [label]
+```
+
+**Each slot occupies 2 columns:**
+- Column 1: Visual reel/item display (2×2 tiles)
+- Column 2: Empty spacer
+
+**Individual Slot Structure (2×4 tile space):**
+```
+Row 11: [FRAME_TOP    ]  ← Slot machine frame
+Row 12: [REEL_CONTENT ]  ← Spinning item icons
+Row 13: [REEL_CONTENT ]  ← Spinning item icons
+Row 14: [LABEL_TEXT   ]  ← Item name when revealed
+```
+
+---
+
+### Item Slot Machine Animation Details
+
+**State 1: Spinning (0.5-1.5s per slot)**
+
+**Reel Animation:**
+- Vertical scrolling of item icon tiles
+- Show 2 cells of the "reel" at once (rows 12-13)
+- Icons blur/motion-trail as they spin
+- Speed: 10-20 frames per icon initially
+
+**Icon Sequence (loops while spinning):**
+```
+Frame 1:  [Sword   ]
+          [Potion  ]
+          
+Frame 2:  [Potion  ]
+          [Armor   ]
+          
+Frame 3:  [Armor   ]
+          [Gem     ]
+          
+Frame 4:  [Gem     ]
+          [Sword   ] (loops)
+```
+
+**Rarity Color Coding (during spin):**
+- Common: Grey/white blur
+- Uncommon: Green blur
+- Rare: Purple blur
+- Legendary: Gold blur + extra particles
+
+**State 2: Slowing Down (0.5s)**
+
+**Tick-Tick-Tick Effect:**
+- Spinning decelerates
+- Icons "snap" from position to position (discrete jumps)
+- Each snap = one tick sound
+- Snaps get progressively slower
+- Tick interval: 100ms → 150ms → 250ms → 400ms
+
+**State 3: Stop & Reveal (0.5s for common/uncommon, 2s+ for legendary)**
+
+**Common/Uncommon Stop:**
+```
+Frame 1: [Item Icon ] (snaps into place)
+Frame 2: [Item Icon ] (flashes white briefly)
+Frame 3: [Item Icon ] (returns to normal)
+Frame 4: [Item Name ] (label appears below)
+```
+
+**Rare Stop:**
+```
+Frame 1: [Item Icon ] (snaps into place)
+Frame 2: Screen flash + purple particles spray from slot
+Frame 3: [Item Icon ] (pulses 1.2x scale)
+Frame 4: Purple glow tiles appear around frame
+Frame 5: [Item Name ] (label appears with flourish)
+```
+
+**Legendary Stop (FULL SPECTACLE):**
+```
+Frame 1:  [Item Icon] (snaps into place)
+Frame 2:  SCREEN FREEZE (all other animations pause)
+Frame 3:  Gold flash fills entire grid
+Frame 4-8: [Item Icon] (scales up from 2×2 to 4×4 tiles, center screen)
+Frame 9-12: Gold particle tiles EXPLODE outward in all directions
+Frame 13-15: [Item Icon] (rotates 360° slowly)
+Frame 16-18: [Item Icon] (scales back to 2×2, returns to slot)
+Frame 19: Golden glow tiles frame the slot (8 surrounding cells)
+Frame 20: [Item Name] (label appears with rainbow shimmer)
+```
+
+**Legendary Particles:**
+- 40-60 gold sparkle tiles burst outward
+- Move in radial pattern from center
+- Some particles "orbit" the legendary item
+- Particles fade over 2-3 seconds
+- Background grid cells pulse gold in wave pattern
+
+---
+
+### Slot Machine Sequencing
+
+**Slots reveal left-to-right with stagger:**
+- Slot 1 starts spinning immediately
+- Slot 2 starts 0.2s after Slot 1
+- Slot 3 starts 0.2s after Slot 2
+- etc.
+
+**Stopping sequence:**
+- Each slot takes 1-2 seconds from spin start to reveal
+- Legendary items always reveal LAST for maximum impact
+- If multiple legendaries, space them out
+
+**Example Timeline (5 slots: 2 common, 1 uncommon, 1 rare, 1 legendary):**
+```
+0.0s:  Slot 1 (common) starts spinning
+0.2s:  Slot 2 (common) starts spinning
+0.4s:  Slot 3 (uncommon) starts spinning
+0.6s:  Slot 4 (rare) starts spinning
+0.8s:  Slot 5 (LEGENDARY) starts spinning
+1.5s:  Slot 1 stops → Common Sword revealed
+2.0s:  Slot 2 stops → Common Potion revealed
+2.5s:  Slot 3 stops → Uncommon Armor revealed
+3.5s:  Slot 4 stops → Rare Axe revealed (purple flourish)
+5.0s:  Slot 5 stops → LEGENDARY STAFF (FULL SPECTACLE - 3 seconds)
+8.0s:  All revealed, continue button appears
+```
+
+---
+
+### Phase 5: Results Summary (Persistent)
+
+**Grid Layout:**
+```
+Row 15: [ TOTAL VALUE: XXXXX G ]
+Row 16: [    [CONTINUE BUTTON]   ]
+```
+
+**Summary Display:**
+- Total equivalent value of all rewards
+- Best item obtained (if legendary/rare)
+- Optional: "New Record!" if best run yet
+
+**Continue Button:**
+- 4×1 or 6×1 tile button at bottom
+- Pulses gently to draw attention
+- Clickable immediately (doesn't wait for animations)
+
+---
+
+## Skip/Fast-Forward System
+
+**User Control:**
+
+**Tap/Click:**
+- Speeds up current animation phase to 2x speed
+- Gold/gem counters jump to final value immediately
+- Slot spins stop within 0.5s
+
+**Hold Button:**
+- After 2 seconds of holding, skip to final results
+- Still plays legendary reveals (abbreviated to 1 second)
+- All other items appear instantly
+
+**Auto-Skip After 15 Seconds:**
+- If player walks away, automatically complete reveal
+- Prevents softlock
+
+---
+
+## Particle System (Grid-Based)
+
+### Particle Tile Types
+
+**1. Sparkle (1×1):**
+- Single cell that pulses/twinkles
+- Colors: gold, silver, rainbow (for legendary)
+- Lifetime: 0.5-1.0 seconds
+- Movement: Radial outward from source, slight random wobble
+
+**2. Burst (1×1):**
+- Sharp flash tile that appears and fades quickly
+- Used for impact moments
+- Lifetime: 0.1-0.3 seconds
+- No movement (appears and fades in place)
+
+**3. Trail (1×1 chain):**
+- Used behind moving objects (coins dropping, gems spiraling)
+- Fades over 0.3 seconds
+- Creates motion blur effect
+
+**4. Glow (1×1 or 2×2):**
+- Soft pulsing light around important elements
+- Semi-transparent overlay tile
+- Lifetime: Persistent until phase ends
+
+### Particle Behavior Patterns
+
+**Radial Burst:**
+```
+     [↑]
+[←] [●] [→]  (● = source)
+     [↓]
+```
+- 8 particles shoot out in cardinal + diagonal directions
+- Travel 3-5 cells before fading
+
+**Fountain:**
+```
+   [↑][↑][↑]
+    [●] (source at bottom)
+```
+- Particles shoot upward
+- Arc over and fall back down with gravity
+- Asymmetric paths for organic feel
+
+**Orbit:**
+```
+  [  ][●][  ]
+  [○]   [○]  (● = center, ○ = orbiting particles)
+  [  ][●][  ]
+```
+- 4-6 particles circle around legendary items
+- Clockwise rotation, 2 second period
+- Fade in/out as they orbit
+
+**Wave Pulse:**
+```
+Wave 1:  [■][■][■]
+Wave 2:  [□][■][□]
+Wave 3:  [ ][ ][ ]
+```
+- Expanding ring of lit cells from center
+- Used for screen-wide effects
+- Each ring is one frame, expands outward
+
+---
+
+## Audio Specifications
+
+### Sound Categories
+
+**Gold Sounds:**
+- Coin drop: Metallic clinks (3 variations to avoid repetition)
+- Counter tick: Digital beep, increasing pitch (10-15 pitch levels)
+- Lock-in: Deep satisfying "ka-chunk" with bass
+
+**Gem Sounds:**
+- Spawn: Crystalline chime (higher pitch than gold)
+- Counter tick: Glass bell tones (musical scale)
+- Lock-in: Bright "shine" sound with reverb
+
+**Chest Sounds:**
+- Drop: Heavy wooden thud + screen rumble
+- Shake: Creaking wood
+- Open: Hinge squeak + burst of magical sparkle
+
+**Slot Machine Sounds:**
+- Spin start: Mechanical whir (looping)
+- Ticking: Rhythmic clicks (tempo decreases with speed)
+- Stop common: Simple "thunk"
+- Stop rare: "Thunk" + crystalline accent
+- Stop legendary: "CHUNK" + choir/orchestra hit + echo
+
+**Legendary Reveal:**
+- Screen freeze: Time-stop "whoosh"
+- Explosion: Bass boom + high sparkle
+- Rotation: Heavenly angelic choir (1-2 seconds)
+- Final lock: Triumphant horn fanfare
+
+### Audio Mixing Priority
+
+1. Legendary sounds (100% volume, mute/duck everything else)
+2. Slot machine results (80% volume)
+3. Counter ticks (60% volume, layered)
+4. Particle sounds (40% volume, subtle)
+5. Background music (20% volume during reveals, fades back to 60% after)
+
+---
+
+## Visual Styling (Grid Tiles)
+
+### Color Palette by Rarity
+
+**Common:**
+- Primary: #CCCCCC (light grey)
+- Accent: #FFFFFF (white)
+- Particles: White/grey
+
+**Uncommon:**
+- Primary: #00FF00 (green)
+- Accent: #88FF88 (light green)
+- Particles: Green sparkles
+
+**Rare:**
+- Primary: #AA00FF (purple)
+- Accent: #DD88FF (light purple)
+- Particles: Purple + white mix
+
+**Legendary:**
+- Primary: #FFD700 (gold)
+- Accent: #FFF000 (yellow)
+- Particles: Gold + rainbow mix + white shine
+
+**Mythic (if implemented):**
+- Primary: #FF00FF (magenta)
+- Accent: Rainbow gradient animated
+- Particles: All colors, maximum chaos
+
+### Tile Render States
+
+**Normal:**
+- Standard grid cell with icon/number
+- Solid color fill
+
+**Highlighted:**
+- Border tiles light up (2px bright edge)
+- Inner glow effect (semi-transparent overlay)
+
+**Pulsing:**
+- Scale oscillates: 1.0x → 1.1x → 1.0x (0.5s cycle)
+- Can combine with highlight
+
+**Flashing:**
+- Rapid color alternation: normal → white → normal (0.1s intervals)
+- Used for impact moments
+
+**Rotating:**
+- 90° increments for simplicity (0°, 90°, 180°, 270°)
+- Or smooth rotation for premium items (1° increments)
+
+---
+
+## Special Case: No Items Dropped
+
+**If loot rolls yield no items (very rare):**
+
+**Grid Display:**
+```
+Row 11-13: [CHEST OPENS BUT EMPTY]
+Row 14:    ["Better luck next time!"]
+```
+
+**Animation:**
+- Chest opens
+- Single sad trombone tile appears
+- Dust particle flies out
+- Consolation gold bonus: +50g added to counter
+
+**Audio:** Comedic "wah wah" sound
+
+---
+
+## Special Case: Jackpot (Multiple Legendaries)
+
+**If 2+ legendaries in one run:**
+
+**Enhanced Sequence:**
+1. First legendary plays normal animation
+2. Second legendary triggers "DOUBLE LEGENDARY!" banner tiles
+3. Screen flashes rainbow instead of gold
+4. Both legendary items orbit each other in center screen
+5. Extra particle explosion (80+ particles)
+6. Special audio: Choir + full orchestra
+
+**Grid Effect:**
+- All cells on screen pulse gold in synchronized wave
+- Frame rate intentionally drops to 30fps for drama (slow-mo feel)
+
+---
+
+## Performance Optimization
+
+### Particle Budget per Phase
+
+- Gold phase: Max 12 particle tiles
+- Gem phase: Max 16 particle tiles
+- Chest phase: Max 8 particle tiles
+- Each slot reveal: Max 10 particle tiles (50 total if 5 slots)
+- Legendary reveal: Max 60 particle tiles (unlimited budget, special case)
+
+### Framerate Targets
+
+- Normal animations: 60 FPS
+- Legendary slow-mo: 30 FPS (intentional)
+- Fast-forward: 120 FPS (speed up animations)
+
+### Memory Considerations
+
+- Reuse tile sprites (don't create new objects)
+- Pool particle tiles (max 100 particle objects alive at once)
+- Clear particles after they fade (free memory)
+- Cache sound effects (don't reload each time)
+
+---
+
+## Accessibility Options
+
+**Settings Menu Toggles:**
+
+1. **Reduce Motion:**
+   - Skip particle animations
+   - Instant counter reveals
+   - No screen shake
+   - Items appear without slots
+
+2. **Fast Rewards:**
+   - All phases at 2x speed by default
+   - Can still manually skip
+
+3. **Sound Options:**
+   - Mute reward sounds (keep music)
+   - Lower sound effect volume
+   - Disable screen freeze on legendary
+
+4. **Photosensitivity Mode:**
+   - No flashing effects
+   - Reduce particle brightness
+   - Smooth fades instead of flashes
+
+---
+
+## Testing Checklist
+
+### Functionality Tests
+
+- [ ] Gold counter reaches correct final value
+- [ ] Gem counter reaches correct final value
+- [ ] Correct number of item slots appear (matches loot rolls earned)
+- [ ] Rarity colors display correctly for each item
+- [ ] Legendary items trigger full animation
+- [ ] Skip button works at all phases
+- [ ] Fast-forward (hold) skips to results
+- [ ] Continue button appears after all reveals complete
+- [ ] Audio plays in correct sequence
+
+### Edge Cases
+
+- [ ] 0 gold earned (show "0" without animation?)
+- [ ] 0 gems earned (skip gem phase entirely)
+- [ ] 0 items dropped (show empty chest + consolation)
+- [ ] All common items (should feel fast)
+- [ ] All legendary items (jackpot sequence)
+- [ ] 10+ loot rolls (overflow slots to next row?)
+- [ ] Extremely high gold values (999,999+) fit in grid?
+
+### Performance Tests
+
+- [ ] Animations run at 60 FPS on target hardware
+- [ ] No memory leaks after 100+ reward reveals
+- [ ] Particle pool doesn't exceed limits
+- [ ] Fast-forward doesn't cause stuttering
+- [ ] Multiple legendary reveals don't crash
+
+### Polish Tests
+
+- [ ] Timing feels good (not too slow, not too fast)
+- [ ] Audio sync matches visual beats
+- [ ] Legendary reveal feels AMAZING
+- [ ] Players understand they can skip (tutorial?)
+- [ ] Players feel excited to see rewards again
+
+---
+
+## Future Enhancements (Post-Launch)
+
+### Unlock Rewards
+
+- Special reward screen variants unlock after achievements
+- Example: "Wave 15 Survivor" unlocks diamond chest skin
+
+### Cosmetic Options
+
+- Players can choose chest style (wooden, iron, gold, crystal)
+- Custom particle colors (unlock with gems)
+- Alternate slot machine themes (cards, wheels, etc.)
+
+### Streak Bonuses
+
+- Daily streak adds bonus particles/effects
+- "Hot streak" banner if player wins 5+ runs in a row
+
+### Social Features
+
+- Share legendary drops to friends
+- Replay reward reveals from history
+- "Hall of Fame" for best drops
+
+---
+
+## Implementation Priority
+
+### Phase 1 (MVP - Launch)
+1. Gold counter tick-up
+2. Gem counter tick-up
+3. Basic chest open animation
+4. Item slot machines (spin → stop → reveal)
+5. Rarity-based colors and sounds
+6. Skip/fast-forward functionality
+7. Legendary full-screen reveal
+
+### Phase 2 (Polish - Week 2)
+8. Particle systems (all types)
+9. Screen shake and juice
+10. Near-miss teasing in slots
+11. Audio polish and mixing
+12. Jackpot sequence (multi-legendary)
+
+### Phase 3 (Extras - Month 1)
+13. Accessibility options
+14. Empty chest consolation
+15. Results summary screen
+16. Replay reward reveal option
+
+---
+
+## Technical Notes
+
+### Grid System Integration
+
+**Assuming existing grid manager handles:**
+- Cell positioning (row/column to screen coordinates)
+- Tile rendering (sprites per cell)
+- Animation state machine per tile
+- Z-order layering (particles above UI, etc.)
+
+**New requirements for reward system:**
+- Support for tile scaling (0.5x to 2.0x)
+- Support for tile rotation (0-360°)
+- Support for semi-transparent overlay tiles (particles/glow)
+- Support for tile motion blur (trail effect)
+- Animation queuing system (sequence phases)
+
+### Code Architecture Suggestion
+
+```
+RewardRevealManager
+├─ GoldPhase
+│  ├─ SpawnCoins()
+│  ├─ AnimateCounter()
+│  └─ LockInEffect()
+├─ GemPhase
+│  ├─ SpawnGems()
+│  ├─ AnimateCounter()
+│  └─ LockInEffect()
+├─ ChestPhase
+│  ├─ DropChest()
+│  ├─ ShakeChest()
+│  └─ OpenChest()
+├─ ItemSlotPhase
+│  ├─ CreateSlots()
+│  ├─ SpinSlot(slotIndex)
+│  ├─ StopSlot(slotIndex, item)
+│  └─ RevealItem(slotIndex, rarity)
+└─ SummaryPhase
+   ├─ DisplayTotals()
+   └─ ShowContinueButton()
+
+ParticleManager
+├─ SpawnParticle(type, position, direction, color)
+├─ UpdateParticles()
+└─ ClearParticles()
+
+AudioManager
+├─ PlaySequencedSounds(soundList)
+├─ DuckBackgroundMusic()
+└─ StopAllRewardSounds()
+```
+
+---
+
+## Appendix: Example Reward Reveal Script
+
+**Scenario:** Wave 10 boss cleared, 5 loot rolls earned (2 common, 1 uncommon, 1 rare, 1 legendary)
+
+**Total Time:** ~12 seconds (3 seconds if skipped)
+
+```
+T=0.0s:  PHASE 0 - Victory transition
+         - Grid flashes white
+         - Gold gradient ripple
+         - "WAVE 10 COMPLETE!" appears
+
+T=1.0s:  PHASE 1 - Gold reveal
+         - 5 coin tiles drop from top
+         - Counter starts: 0 → 4850
+         - Tick-tick-tick-CHUNK!
+         - Particles burst from counter
+
+T=3.5s:  PHASE 2 - Gem reveal
+         - 3 gem tiles spiral in
+         - Counter starts: 0 → 35
+         - Ding-ding-SHINE!
+         - Rainbow particles
+
+T=6.0s:  PHASE 3 - Chest appears
+         - Chest drops with THUD
+         - Bounces and settles
+         - Shakes with anticipation
+         - Lid creaks open
+
+T=7.0s:  PHASE 4 - Item slots
+         T=7.0s:  Slot 1 (common) starts spinning
+         T=7.2s:  Slot 2 (common) starts spinning
+         T=7.4s:  Slot 3 (uncommon) starts spinning
+         T=7.6s:  Slot 4 (rare) starts spinning
+         T=7.8s:  Slot 5 (LEGENDARY) starts spinning
+         
+         T=8.5s:  Slot 1 stops → Common Sword (quick reveal)
+         T=9.0s:  Slot 2 stops → Common Potion (quick reveal)
+         T=9.5s:  Slot 3 stops → Uncommon Armor (green flash)
+         T=10.5s: Slot 4 stops → Rare Axe (purple explosion)
+         T=12.0s: Slot 5 stops → LEGENDARY STAFF!!!
+                  - SCREEN FREEZE
+                  - Gold flash covers grid
+                  - Staff scales to 4×4 at center
+                  - 60 gold particles explode
+                  - Choir sings
+                  - Staff rotates 360°
+                  - Returns to slot with golden frame
+                  
+T=15.0s: PHASE 5 - Summary
+         - "Total Value: 6,850g" appears
+         - "Best Drop: Legendary Staff of Flames"
+         - Continue button pulses
+
+T=15.0s+: Player clicks continue, returns to hub
+```
+
+---
+
+## Design Sign-Off
+
+**Core Principles Maintained:**
+✅ All elements represented as grid tiles
+✅ Unified visual language with rest of game
+✅ Scalable to different grid sizes
+✅ Maximum juice within performance budget
+✅ Player control (skip/fast-forward always available)
+✅ Accessibility options planned
+✅ Clear implementation path
+
+**Key Success Metrics:**
+- Players feel excited to see reward reveals (not tedious)
+- Legendary drops feel truly special
+- System runs at 60 FPS on target hardware
+- 90%+ of players don't skip every time (engaging enough)
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** December 2025  
+**Contributors:** Alex (Design Lead), Claude (Design Assistant)
+
+**Status:** Ready for Implementation

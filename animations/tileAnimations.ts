@@ -42,6 +42,10 @@ export function animateTileSlide(
   const deltaX = toX - fromX;
   const deltaY = toY - fromY;
 
+  // Set tile animation flag to block battle auto-advance
+  window.__tileAnimationPlaying = true;
+  console.log('[animateTileSlide] Starting slide animation', { fromPosition, toPosition });
+
   // First, ensure the element is at the starting position
   gsap.set(element, {
     left: fromX,
@@ -52,7 +56,7 @@ export function animateTileSlide(
 
   // Then animate using transforms for smooth diagonal movement
   // Transforms are hardware-accelerated and guarantee simultaneous X/Y movement
-  gsap.to(element, {
+  const tween = gsap.to(element, {
     x: deltaX,
     y: deltaY,
     duration,
@@ -66,9 +70,25 @@ export function animateTileSlide(
         x: 0,
         y: 0,
       });
+      // Clear tile animation flag
+      window.__tileAnimationPlaying = false;
+      console.log('[animateTileSlide] Animation complete, flag cleared');
       onComplete?.();
     },
+    onInterrupt: () => {
+      // If animation is killed/interrupted, still clear the flag
+      window.__tileAnimationPlaying = false;
+      console.log('[animateTileSlide] Animation interrupted, flag cleared');
+    },
   });
+
+  // Safety timeout: if animation doesn't complete in expected time + buffer, force clear flag
+  setTimeout(() => {
+    if (window.__tileAnimationPlaying && !tween.isActive()) {
+      console.warn('[animateTileSlide] Animation stuck, force clearing flag');
+      window.__tileAnimationPlaying = false;
+    }
+  }, (duration * 1000) + 500);
 }
 
 /**
@@ -84,8 +104,21 @@ export function animateAttack(
 ): void {
   const distance = direction === 'left' ? -30 : 30;
 
+  // Set tile animation flag to block battle auto-advance
+  window.__tileAnimationPlaying = true;
+  console.log('[animateAttack] Starting attack animation');
+
   const tl = gsap.timeline({
-    onComplete,
+    onComplete: () => {
+      // Clear tile animation flag
+      window.__tileAnimationPlaying = false;
+      console.log('[animateAttack] Animation complete, flag cleared');
+      onComplete?.();
+    },
+    onInterrupt: () => {
+      window.__tileAnimationPlaying = false;
+      console.log('[animateAttack] Animation interrupted, flag cleared');
+    },
   });
 
   // Quick dash forward
@@ -101,6 +134,14 @@ export function animateAttack(
     duration: 0.2,
     ease: 'power2.in',
   });
+
+  // Safety timeout
+  setTimeout(() => {
+    if (window.__tileAnimationPlaying && !tl.isActive()) {
+      console.warn('[animateAttack] Animation stuck, force clearing flag');
+      window.__tileAnimationPlaying = false;
+    }
+  }, 850); // 0.15 + 0.2 + 500ms buffer
 }
 
 /**
@@ -112,7 +153,11 @@ export function animateDamage(
   element: HTMLElement,
   onComplete?: () => void
 ): void {
-  gsap.fromTo(
+  // Set tile animation flag to block battle auto-advance
+  window.__tileAnimationPlaying = true;
+  console.log('[animateDamage] Starting damage animation');
+
+  const tween = gsap.fromTo(
     element,
     { x: -5 },
     {
@@ -123,14 +168,30 @@ export function animateDamage(
       ease: 'power1.inOut',
       onComplete: () => {
         gsap.set(element, { x: 0 });
+        // Clear tile animation flag
+        window.__tileAnimationPlaying = false;
+        console.log('[animateDamage] Animation complete, flag cleared');
         onComplete?.();
+      },
+      onInterrupt: () => {
+        window.__tileAnimationPlaying = false;
+        console.log('[animateDamage] Animation interrupted, flag cleared');
       },
     }
   );
+
+  // Safety timeout
+  setTimeout(() => {
+    if (window.__tileAnimationPlaying && !tween.isActive()) {
+      console.warn('[animateDamage] Animation stuck, force clearing flag');
+      window.__tileAnimationPlaying = false;
+    }
+  }, 800); // 0.05 * 6 repeats + 500ms buffer
 }
 
 /**
- * Animates unit death (fade out and scale down)
+ * Animates unit death (float up then fall down off screen)
+ * Matches the grid transition exit animation pattern
  * @param element - The dying unit's DOM element
  * @param onComplete - Callback when animation finishes
  */
@@ -138,12 +199,47 @@ export function animateDeath(
   element: HTMLElement,
   onComplete?: () => void
 ): void {
-  gsap.to(element, {
-    opacity: 0,
-    scale: 0.5,
-    rotation: -15,
-    duration: 0.4,
-    ease: 'power2.in',
-    onComplete,
+  // Set tile animation flag to block battle auto-advance
+  window.__tileAnimationPlaying = true;
+  console.log('[animateDeath] Starting death animation');
+
+  const tl = gsap.timeline({
+    onComplete: () => {
+      // Clear tile animation flag
+      window.__tileAnimationPlaying = false;
+      console.log('[animateDeath] Animation complete, flag cleared');
+      onComplete?.();
+    },
+    onInterrupt: () => {
+      window.__tileAnimationPlaying = false;
+      console.log('[animateDeath] Animation interrupted, flag cleared');
+    },
   });
+
+  // Float up slightly with fade
+  tl.to(element, {
+    y: -30,
+    opacity: 0.7,
+    scale: 1.1,
+    duration: 0.2,
+    ease: 'power2.out',
+  });
+
+  // Fall down off screen (matching grid exit animation)
+  tl.to(element, {
+    y: 100,
+    opacity: 0,
+    rotation: 5,
+    scale: 0.8,
+    duration: 0.3,
+    ease: 'power2.in',
+  });
+
+  // Safety timeout
+  setTimeout(() => {
+    if (window.__tileAnimationPlaying && !tl.isActive()) {
+      console.warn('[animateDeath] Animation stuck, force clearing flag');
+      window.__tileAnimationPlaying = false;
+    }
+  }, 1000); // 200ms + 300ms + 500ms buffer
 }

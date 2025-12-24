@@ -30,16 +30,28 @@ export function createMainMenuLayout(
     animationDelay: 0.1,
   });
 
-  // Row 4: Settings button
+  // Row 4: Hero Menu button
+  occupants.push({
+    id: 'btn-hero-menu',
+    type: GridOccupantType.Button,
+    position: { row: 4, col: 3 },
+    label: 'Heroes',
+    icon: '⚔️',
+    variant: 'primary',
+    onClick: () => navigate(ScreenType.HeroMenu),
+    animationDelay: 0.2,
+  });
+
+  // Row 5: Settings button
   occupants.push({
     id: 'btn-settings',
     type: GridOccupantType.Button,
-    position: { row: 4, col: 3 },
+    position: { row: 5, col: 3 },
     label: 'Settings',
     icon: generateButtonIcon('settings'),
     variant: 'secondary',
     onClick: () => navigate(ScreenType.Settings),
-    animationDelay: 0.2,
+    animationDelay: 0.3,
   });
 
   return occupants;

@@ -1,4 +1,5 @@
 import { Hero, Item, ItemInstance, Difficulty } from './core.types';
+import { LootConfig } from '@/utils/lootGenerator';
 
 // Screen types for navigation
 export enum ScreenType {
@@ -8,11 +9,13 @@ export enum ScreenType {
   PreBattle = 'preBattle',
   Battle = 'battle',
   HeroRoster = 'heroRoster',
+  HeroMenu = 'heroMenu',
   Shop = 'shop',
   Settings = 'settings',
   Victory = 'victory',
   Defeat = 'defeat',
   AbilitySelection = 'abilitySelection',
+  RewardReveal = 'rewardReveal',
 }
 
 // Stage node for campaign map
@@ -37,7 +40,7 @@ export interface Stage {
   id: number;
   name: string;
   difficulty: Difficulty;
-  enemies: string[]; // Enemy template IDs
+  enemies: string[] | string[][]; // Enemy template IDs, or array of waves for multi-wave battles
   playerSlots: number;
   enemySlots: number;
   rewards: {
@@ -46,6 +49,7 @@ export interface Stage {
     recruitChance: number;
     gems?: number; // Gems awarded for boss stages
   };
+  lootConfig?: LootConfig; // Item drop configuration
   unlockRequirement?: number; // Stage ID that must be completed
   isBoss?: boolean; // Mark boss stages for gem rewards
 }

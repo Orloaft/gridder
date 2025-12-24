@@ -50,7 +50,9 @@ export interface Ability {
   description: string;
   cooldown: number;
   currentCooldown: number;
+  range?: number; // Optional range in tiles (default is melee range = 1)
   effects: AbilityEffect[];
+  animationType?: 'cleave' | 'projectile' | 'buff' | 'melee'; // For animation system
 }
 
 // Status Effect Types (extended from design doc)
@@ -214,12 +216,14 @@ export interface Item {
   slot: 'weapon' | 'armor' | 'accessory';
   consumable?: boolean; // If true, item is consumed after one use
   permanent?: boolean; // If true, effects are permanent (default: only active when equipped)
+  maxDurability?: number; // Max durability (3/5/7/10 by rarity), undefined for indestructible items
 }
 
 // Item instance (in player's inventory)
 export interface ItemInstance extends Item {
   instanceId: string;
   equippedTo?: string; // Hero instanceId if equipped
+  durability?: number; // Current durability (decreases on hero death), undefined for indestructible items
 }
 
 // Status effect (buff/debuff during battle)

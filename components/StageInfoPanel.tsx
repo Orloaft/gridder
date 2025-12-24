@@ -124,7 +124,11 @@ export function StageInfoPanel({ stage, isCompleted, isUnlocked, width }: StageI
       <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 flex-1">
         <p className="text-xs text-gray-400 mb-2">Enemy Forces</p>
         <div className="flex flex-col gap-1">
-          {stage.enemies.map((enemyType, idx) => (
+          {/* Handle both single wave (string[]) and multi-wave (string[][]) formats */}
+          {(Array.isArray(stage.enemies[0])
+            ? (stage.enemies as string[][]).flat()
+            : stage.enemies as string[]
+          ).map((enemyType, idx) => (
             <div
               key={idx}
               className="bg-red-900/20 px-2 py-1 rounded text-red-300 text-xs font-medium border border-red-800/50"
@@ -132,6 +136,12 @@ export function StageInfoPanel({ stage, isCompleted, isUnlocked, width }: StageI
               {enemyType.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
             </div>
           ))}
+          {/* Show wave indicator for multi-wave battles */}
+          {Array.isArray(stage.enemies[0]) && (
+            <div className="bg-purple-900/20 px-2 py-1 rounded text-purple-300 text-xs font-medium border border-purple-800/50 mt-1">
+              ⚡ {(stage.enemies as string[][]).length} Waves
+            </div>
+          )}
         </div>
       </div>
 

@@ -42,6 +42,7 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
         description: 'Deals damage and heals for 30% of damage dealt',
         cooldown: 3,
         currentCooldown: 0,
+        range: 1, // Melee range
         effects: [
           {
             type: 'damage',
@@ -54,6 +55,7 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
             targetType: 'self',
           },
         ],
+        animationType: 'melee', // Melee attack with lifesteal
       },
     ],
     spritePath: ICON_PATHS.bloodyAxeman,
@@ -192,9 +194,10 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
         id: 'precise_shot',
         name: 'Precise Shot',
         type: AbilityType.Offensive,
-        description: 'High accuracy ranged attack',
+        description: 'High accuracy ranged attack with 4 tile range',
         cooldown: 2,
         currentCooldown: 0,
+        range: 4, // Can shoot from 4 tiles away
         effects: [
           {
             type: 'damage',
@@ -202,6 +205,7 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
             targetType: 'enemy',
           },
         ],
+        animationType: 'projectile', // Arrow animation
       },
     ],
     spritePath: ICON_PATHS.torchman,
@@ -425,6 +429,55 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
     description: 'Glass cannon assassin with extreme crit and evasion',
     tags: ['dps', 'assassin', 'melee', 'critical'],
   },
+
+  war_cleric: {
+    id: 'war_cleric',
+    class: 'War Cleric',
+    name: 'War Cleric',
+    title: 'The Divine Healer',
+    baseStats: {
+      hp: 65,
+      maxHp: 65,
+      damage: 18,
+      speed: 95,
+      defense: 15,
+      critChance: 0.08,
+      critDamage: 1.4,
+      evasion: 0.05,
+      accuracy: 0.95,
+    },
+    statGrowth: {
+      hp: 7.5,
+      damage: 2.0,
+      speed: 1.2,
+      defense: 0.6,
+      critChance: 0.001,
+      critDamage: 0.008,
+      evasion: 0.001,
+      accuracy: 0.001,
+    },
+    abilities: [
+      {
+        id: 'mass_heal',
+        name: 'Mass Heal',
+        type: AbilityType.Support,
+        description: 'Channel divine energy to restore health to all allied heroes',
+        cooldown: 1,
+        currentCooldown: 0,
+        effects: [
+          {
+            type: 'heal',
+            value: 45,
+            targetType: 'allAllies',
+          },
+        ],
+      },
+    ],
+    spritePath: ICON_PATHS.warCleric,
+    rarity: Rarity.Rare,
+    description: 'Holy warrior who brings divine healing to the battlefield',
+    tags: ['support', 'healer', 'melee', 'divine'],
+  },
 };
 
 // Enemy Templates
@@ -486,7 +539,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     type: 'Blob',
     baseStats: createStats(80, 20, 70),
     abilities: [],
-    spritePath: ICON_PATHS.bluebottle,
+    spritePath: ICON_PATHS.slime,
     description: 'Gelatinous creature',
   },
 
@@ -727,20 +780,23 @@ export const LEARNABLE_ABILITIES: Record<string, Ability> = {
     id: 'fireball',
     name: 'Fireball',
     type: AbilityType.Offensive,
-    description: 'Hurl a flaming projectile that explodes on impact, dealing damage and burning enemies',
+    description: 'Hurl a flaming projectile that explodes on impact, dealing damage and burning enemies in a 2x2 area',
     cooldown: 5,
     currentCooldown: 0,
+    range: 3, // Can target enemies up to 3 tiles away
     effects: [
       {
         type: 'damage',
-        value: 100,
-        targetType: 'enemy',
+        value: 80,
+        targetType: 'aoe',
+        radius: 0, // 2x2 explosion area (special handling in BattleSimulator)
       },
       {
         type: 'status',
         statusType: StatusEffectType.Burn,
         duration: 3,
-        targetType: 'enemy',
+        targetType: 'aoe',
+        radius: 0, // 2x2 explosion area (special handling in BattleSimulator)
         damagePerTick: 10,
       },
     ],

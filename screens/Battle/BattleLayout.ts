@@ -2,6 +2,9 @@ import { AnyGridOccupant, GridOccupantType } from '@/types/grid.types';
 import { BattleState, BattleEventType } from '@/systems/BattleSimulator';
 import { generateButtonIcon } from '@/utils/generatePlaceholder';
 import { useGameStore } from '@/store/gameStore';
+import { getStageById, getNextUnlockedStage } from '@/data/stages';
+import { getLocationByStageId } from '@/data/locations';
+import { ScreenType } from '@/types/progression.types';
 
 export function createBattleLayout(
   battleState: BattleState,
@@ -12,7 +15,146 @@ export function createBattleLayout(
 ): AnyGridOccupant[] {
   const occupants: AnyGridOccupant[] = [];
 
-  // Row 0: Speed button (removed turn counter for cooldown-based system)
+  // Check if battle is finished and was a victory
+  const battleFinished = currentEventIndex >= battleState.events.length;
+  const isVictory = battleFinished && battleState.winner === 'heroes';
+
+  // Check if we're at a wave transition pause
+  const currentEvent = battleState.events[currentEventIndex];
+  const isWaveTransition = currentEvent?.type === BattleEventType.WaveComplete;
+
+  console.log('[BattleLayout] Battle state check:', {
+    currentEventIndex,
+    totalEvents: battleState.events.length,
+    battleFinished,
+    winner: battleState.winner,
+    isVictory,
+    isWaveTransition,
+    currentEventType: currentEvent?.type
+  });
+
+  // WAVE TRANSITION SCREEN - Show decision UI between waves
+  if (isWaveTransition && currentEvent) {
+    const state = useGameStore.getState();
+    const stage = state.selectedStageId ? getStageById(state.selectedStageId) : null;
+
+    if (stage) {
+      const waveData = currentEvent.data;
+      const nextWaveIsBoss = waveData.nextWaveNumber === waveData.totalWaves;
+
+      // Title - Wave Complete
+      occupants.push({
+        id: 'wave-complete-title',
+        type: GridOccupantType.Decoration,
+        position: { row: 1, col: 3 },
+        text: `Wave ${waveData.waveNumber} Complete!`,
+        style: 'title',
+        animationDelay: 0.1,
+      });
+
+      // Next wave warning
+      occupants.push({
+        id: 'next-wave-info',
+        type: GridOccupantType.Decoration,
+        position: { row: 2, col: 2 },
+        text: nextWaveIsBoss
+          ? `Next: 💀 BOSS WAVE ${waveData.nextWaveNumber}/${waveData.totalWaves} 💀`
+          : `Next: Wave ${waveData.nextWaveNumber}/${waveData.totalWaves}`,
+        style: 'subtitle',
+        animationDelay: 0.3,
+      });
+
+      // Calculate current rewards
+      const maxWaveReached = battleState.currentWave;
+      const goldMultiplier = maxWaveReached <= 3 ? 1.0 :
+                              maxWaveReached <= 6 ? 1.5 :
+                              maxWaveReached <= 9 ? 2.0 :
+                              4.0;
+
+      // Calculate medical costs for fainted heroes
+      let medicalCosts = 0;
+      let faintedCount = 0;
+      state.preBattleTeam.forEach(heroId => {
+        const battleHero = battleState.heroes.find(h => h.instanceId === heroId);
+        if (battleHero && !battleHero.isAlive) {
+          faintedCount++;
+          medicalCosts += 125; // Average cost
+        }
+      });
+
+      // Show current retreat rewards
+      const baseGold = Math.floor((stage.rewards.gold * 0.5) * goldMultiplier);
+      const netGold = Math.max(0, baseGold - medicalCosts);
+
+      occupants.push({
+        id: 'retreat-rewards-label',
+        type: GridOccupantType.Decoration,
+        position: { row: 4, col: 2 },
+        text: 'Retreat Rewards:',
+        style: 'subtitle',
+        animationDelay: 0.5,
+      });
+
+      occupants.push({
+        id: 'retreat-gold',
+        type: GridOccupantType.Decoration,
+        position: { row: 5, col: 3 },
+        text: `${netGold}g (50%)`,
+        spritePath: '/icons/coin.PNG',
+        style: 'subtitle',
+        animationDelay: 0.6,
+      });
+
+      if (faintedCount > 0) {
+        occupants.push({
+          id: 'medical-warning',
+          type: GridOccupantType.Decoration,
+          position: { row: 5, col: 5 },
+          text: `-${medicalCosts}g medical`,
+          icon: '⚕️',
+          style: 'subtitle',
+          animationDelay: 0.7,
+        });
+      }
+
+      // Retreat button
+      occupants.push({
+        id: 'btn-retreat-wave',
+        type: GridOccupantType.Button,
+        position: { row: 7, col: 2 },
+        label: 'Retreat',
+        icon: '←',
+        variant: 'secondary',
+        onClick: () => {
+          const gameState = useGameStore.getState();
+          if (gameState.retreatFromBattle) {
+            gameState.retreatFromBattle();
+          }
+        },
+        animationDelay: 0.8,
+      });
+
+      // Proceed button
+      occupants.push({
+        id: 'btn-proceed-wave',
+        type: GridOccupantType.Button,
+        position: { row: 7, col: 5 },
+        label: nextWaveIsBoss ? 'Face Boss' : 'Continue',
+        icon: '→',
+        variant: 'primary',
+        onClick: () => {
+          // Resume battle by advancing to next event
+          onNextEvent();
+        },
+        animationDelay: 0.9,
+      });
+
+      return occupants; // Return early - don't show normal battle UI
+    }
+  }
+
+  // NORMAL BATTLE UI - Show during active combat
+  // Row 0: Speed button, Boss Wave indicator, and Retreat button
   occupants.push({
     id: 'btn-speed',
     type: GridOccupantType.Button,
@@ -23,6 +165,21 @@ export function createBattleLayout(
     onClick: onToggleSpeed,
     animationDelay: 0.1,
   });
+
+  // Boss Wave indicator - show during last wave
+  if (!battleFinished && battleState.currentWave === battleState.totalWaves) {
+    occupants.push({
+      id: 'boss-wave-indicator',
+      type: GridOccupantType.Decoration,
+      position: { row: 0, col: 3 },
+      text: 'BOSS WAVE',
+      icon: '💀',
+      style: 'title',
+      animationDelay: 0.2,
+    });
+  }
+
+  // Note: Retreat button removed - retreat decisions are now made during wave transitions
 
   // Heroes - use their current positions from battle state
   battleState.heroes.forEach((hero) => {
@@ -46,8 +203,30 @@ export function createBattleLayout(
   });
 
   // Enemies - use their current positions from battle state
+  // Only render enemies whose wave has spawned (prevents rendering off-screen units)
+  const aliveEnemies = battleState.enemies.filter(e => e.isAlive);
+  const spawnedEnemies = aliveEnemies.filter(e => !e.wave || e.wave <= battleState.currentWave);
+
+  console.log(`[BattleLayout] Rendering enemies:`, {
+    currentWave: battleState.currentWave,
+    totalWaves: battleState.totalWaves,
+    totalAliveEnemies: aliveEnemies.length,
+    spawnedEnemies: spawnedEnemies.length,
+    enemyDetails: aliveEnemies.map(e => ({ name: e.name, wave: e.wave, spawned: !e.wave || e.wave <= battleState.currentWave, pos: e.position }))
+  });
+
   battleState.enemies.forEach((enemy) => {
     if (!enemy.isAlive) return; // Don't render dead units
+
+    // Check if this enemy's wave has spawned yet
+    const hasSpawned = !enemy.wave || enemy.wave <= battleState.currentWave;
+
+    // CRITICAL: Only render enemies that have spawned
+    // Unspawned enemies are at col: 8 (off-screen) and shouldn't be visible yet
+    if (!hasSpawned) {
+      console.log(`[BattleLayout] Skipping unspawned enemy:`, { name: enemy.name, wave: enemy.wave, currentWave: battleState.currentWave, pos: enemy.position });
+      return;
+    }
 
     occupants.push({
       id: `enemy-${enemy.id}`,
@@ -72,6 +251,13 @@ export function createBattleLayout(
     switch (event.type) {
       case BattleEventType.BattleStart:
         logText = 'Battle Start!';
+        break;
+      case BattleEventType.WaveStart:
+        // Check if this is the boss wave (last wave)
+        const isBossWave = event.data.waveNumber === event.data.totalWaves;
+        logText = isBossWave
+          ? `🔥 BOSS WAVE ${event.data.waveNumber}/${event.data.totalWaves}! 🔥`
+          : `Wave ${event.data.waveNumber}/${event.data.totalWaves}!`;
         break;
       case BattleEventType.Tick:
         // Don't show tick events in log (they're just for cooldown updates)
@@ -110,7 +296,147 @@ export function createBattleLayout(
     }
   }
 
-  // No manual next button - battle auto-advances
+  // Victory Rewards Display
+  if (isVictory) {
+    const state = useGameStore.getState();
+    const stage = state.selectedStageId ? getStageById(state.selectedStageId) : null;
+
+    if (stage) {
+      // Victory title - centered at top
+      occupants.push({
+        id: 'victory-title',
+        type: GridOccupantType.Decoration,
+        position: { row: 1, col: 3 },
+        text: 'VICTORY!',
+        style: 'title',
+        animationDelay: 0.2,
+      });
+
+      // Calculate medical costs for fainted heroes (same logic as gameStore)
+      let medicalCosts = 0;
+      let faintedCount = 0;
+      state.preBattleTeam.forEach(heroId => {
+        const battleHero = battleState.heroes.find(h => h.instanceId === heroId);
+        if (battleHero && !battleHero.isAlive) {
+          faintedCount++;
+          medicalCosts += 125; // Average of 100-150g (use mid-point for display)
+        }
+      });
+
+      // Calculate gold multiplier based on max wave reached
+      const maxWaveReached = battleState.currentWave;
+      const goldMultiplier = maxWaveReached <= 3 ? 1.0 :
+                              maxWaveReached <= 6 ? 1.5 :
+                              maxWaveReached <= 9 ? 2.0 :
+                              4.0; // Wave 10+
+
+      // Row 3: Primary rewards (Gold, Gems, XP)
+      let row3Col = 2; // Start more centered
+
+      // Gold reward tile (show net gold after multiplier and medical costs)
+      const baseGold = Math.floor(stage.rewards.gold * goldMultiplier);
+      const netGold = Math.max(0, baseGold - medicalCosts);
+      let goldText = `+${netGold}`;
+      if (goldMultiplier > 1.0 && medicalCosts > 0) {
+        goldText = `+${netGold} (${goldMultiplier}x, -${medicalCosts})`;
+      } else if (goldMultiplier > 1.0) {
+        goldText = `+${netGold} (${goldMultiplier}x)`;
+      } else if (medicalCosts > 0) {
+        goldText = `+${netGold} (-${medicalCosts})`;
+      }
+      occupants.push({
+        id: 'reward-gold',
+        type: GridOccupantType.Decoration,
+        position: { row: 3, col: row3Col },
+        text: goldText,
+        spritePath: '/icons/coin.PNG',
+        style: 'subtitle',
+        animationDelay: 0.4,
+      });
+      row3Col++;
+
+      // XP reward tile
+      const xpPerHero = Math.floor(stage.rewards.experience / state.preBattleTeam.length);
+      occupants.push({
+        id: 'reward-xp',
+        type: GridOccupantType.Decoration,
+        position: { row: 3, col: row3Col },
+        text: `+${xpPerHero}`,
+        spritePath: '/icons/orb.PNG',
+        style: 'subtitle',
+        animationDelay: 0.6,
+      });
+      row3Col++;
+
+      // Gems reward tile (if boss stage)
+      if (stage.rewards.gems && stage.rewards.gems > 0) {
+        occupants.push({
+          id: 'reward-gems',
+          type: GridOccupantType.Decoration,
+          position: { row: 3, col: row3Col },
+          text: `+${stage.rewards.gems}`,
+          icon: '💎',
+          style: 'subtitle',
+          animationDelay: 0.8,
+        });
+        row3Col++;
+      }
+
+      // Row 5: Item rewards (show last 4 items added to inventory)
+      const recentItems = state.inventory.slice(-4);
+      if (recentItems.length > 0) {
+        let row5Col = Math.max(1, 4 - Math.floor(recentItems.length / 2)); // Center items
+
+        recentItems.forEach((item, index) => {
+          if (row5Col < 7) { // Don't overflow the grid
+            occupants.push({
+              id: `reward-item-${index}`,
+              type: GridOccupantType.Decoration,
+              position: { row: 5, col: row5Col },
+              text: item.name,
+              icon: item.icon || '📦',
+              style: 'subtitle',
+              animationDelay: 1.0 + (index * 0.15),
+            });
+            row5Col++;
+          }
+        });
+      }
+
+      // Continue button - always returns to location map (since each location is one mission)
+      occupants.push({
+        id: 'btn-next',
+        type: GridOccupantType.Button,
+        position: { row: 7, col: 3 },
+        label: 'Continue',
+        icon: '→',
+        variant: 'primary',
+        onClick: () => {
+          // Mission completed - return to location map
+          useGameStore.setState({
+            selectedStageId: null,
+            selectedLocationId: null,
+            currentBattle: null,
+            battleEventIndex: 0,
+            battleSpeed: 1,
+          });
+
+          // Switch back to main menu music
+          const { audioManager } = require('@/utils/audioManager');
+          audioManager.playMusic('/Goblins_Den_(Regular).wav', true, 0.5);
+
+          // Use grid transition to navigate to location map
+          if ((window as any).__gridNavigate) {
+            (window as any).__gridNavigate(ScreenType.LocationMap);
+          } else {
+            const state = useGameStore.getState();
+            state.navigate(ScreenType.LocationMap);
+          }
+        },
+        animationDelay: 1.2,
+      });
+    }
+  }
 
   return occupants;
 }

@@ -1,0 +1,1048 @@
+# Combat Collision & Unit Positioning Fix Document
+
+## Problem Analysis
+
+**Core Issue:** Units stacking on top of each other indicates the simulation isn't treating grid positions as **exclusive resources**. Multiple units are being allowed to occupy the same tile simultaneously.
+
+**Root Causes:**
+1. No collision detection during movement
+2. Pathfinding doesn't account for occupied tiles
+3. Unit spawning doesn't check if tile is already occupied
+4. Movement system updates positions without validation
+
+---
+
+## Solution: Collision-Aware Grid Manager
+
+### 1. Occupancy Grid System
+
+```typescript
+// ========================================
+// GRID MANAGER: Single Source of Truth
+// ========================================
+
+class GridManager {
+  private width: number;
+  private height: number;
+  private occupancy: Map<string, EntityId>; // "x,y" -> entityId
+  
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+    this.occupancy = new Map();
+  }
+  
+  // Core occupancy methods
+  public isOccupied(x: number, y: number): boolean {
+    return this.occupancy.has(this.key(x, y));
+  }
+  
+  public getOccupant(x: number, y: number): EntityId | null {
+    return this.occupancy.get(this.key(x, y)) || null;
+  }
+  
+  public occupy(x: number, y: number, entityId: EntityId): boolean {
+    if (!this.isInBounds(x, y)) return false;
+    if (this.isOccupied(x, y)) return false;
+    
+    this.occupancy.set(this.key(x, y), entityId);
+    return true;
+  }
+  
+  public vacate(x: number, y: number): void {
+    this.occupancy.delete(this.key(x, y));
+  }
+  
+  public move(entityId: EntityId, fromX: number, fromY: number, toX: number, toY: number): boolean {
+    if (!this.isInBounds(toX, toY)) return false;
+    if (this.isOccupied(toX, toY)) return false;
+    
+    // Check that entity actually occupies the from position
+    const currentOccupant = this.getOccupant(fromX, fromY);
+    if (currentOccupant !== entityId) {
+      console.warn(`Entity ${entityId} tried to move from (${fromX},${fromY}) but doesn't occupy it`);
+      return false;
+    }
+    
+    // Atomic move
+    this.vacate(fromX, fromY);
+    this.occupy(toX, toY, entityId);
+    return true;
+  }
+  
+  // Helper methods
+  public isInBounds(x: number, y: number): boolean {
+    return x >= 0 && x < this.width && y >= 0 && y < this.height;
+  }
+  
+  public isWalkable(x: number, y: number): boolean {
+    return this.isInBounds(x, y) && !this.isOccupied(x, y);
+  }
+  
+  public findNearestEmptyTile(x: number, y: number, maxRadius: number = 5): GridPosition | null {
+    // Spiral search for empty tile
+    for (let radius = 1; radius <= maxRadius; radius++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue; // Only check perimeter
+          
+          const checkX = x + dx;
+          const checkY = y + dy;
+          
+          if (this.isWalkable(checkX, checkY)) {
+            return { x: checkX, y: checkY };
+          }
+        }
+      }
+    }
+    
+    return null; // No empty tiles found
+  }
+  
+  private key(x: number, y: number): string {
+    return `${Math.floor(x)},${Math.floor(y)}`;
+  }
+  
+  // Debug helpers
+  public getOccupancyMap(): string[][] {
+    const map: string[][] = Array(this.height).fill(null).map(() => Array(this.width).fill('.'));
+    
+    this.occupancy.forEach((entityId, key) => {
+      const [x, y] = key.split(',').map(Number);
+      map[y][x] = 'X';
+    });
+    
+    return map;
+  }
+  
+  public printOccupancy(): void {
+    console.log("Grid Occupancy:");
+    this.getOccupancyMap().forEach((row, y) => {
+      console.log(`Row ${y}: ${row.join(' ')}`);
+    });
+  }
+}
+```
+
+---
+
+## 2. Fix Transform Component to Use Integer Positions
+
+```typescript
+interface TransformComponent {
+  type: ComponentType.Transform;
+  x: number; // Grid column (integer)
+  y: number; // Grid row (integer)
+  
+  // Visual interpolation (for smooth movement animation)
+  visualX: number; // Can be fractional for rendering
+  visualY: number; // Can be fractional for rendering
+  
+  facing: Direction;
+}
+
+// When querying grid position, ALWAYS use Math.floor
+function getGridPosition(transform: TransformComponent): GridPosition {
+  return {
+    x: Math.floor(transform.x),
+    y: Math.floor(transform.y),
+  };
+}
+```
+
+---
+
+## 3. Updated Movement System with Collision Detection
+
+```typescript
+class MovementSystem extends System {
+  update(world: World, deltaTime: number): void {
+    const gridManager = world.getGridManager();
+    const movingEntities = world.query(ComponentType.Transform, ComponentType.Movement);
+    
+    movingEntities.forEach(entityId => {
+      const transform = world.getComponent<TransformComponent>(entityId, ComponentType.Transform);
+      const movement = world.getComponent<MovementComponent>(entityId, ComponentType.Movement);
+      
+      if (!transform || !movement) return;
+      if (movement.movementType === "stationary") return;
+      if (!movement.currentPath || movement.currentPath.length === 0) return;
+      
+      const currentGridPos = getGridPosition(transform);
+      const targetPos = movement.currentPath[0];
+      
+      // Check if target tile is walkable
+      if (!gridManager.isWalkable(targetPos.x, targetPos.y)) {
+        // Blocked! Recalculate path
+        movement.currentPath = null;
+        this.requestNewPath(world, entityId, movement);
+        return;
+      }
+      
+      // Calculate movement
+      const distance = movement.speed * deltaTime;
+      const dx = targetPos.x - transform.x;
+      const dy = targetPos.y - transform.y;
+      const distToTarget = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distToTarget <= distance) {
+        // Reached waypoint - atomic grid update
+        const success = gridManager.move(
+          entityId,
+          currentGridPos.x,
+          currentGridPos.y,
+          targetPos.x,
+          targetPos.y
+        );
+        
+        if (success) {
+          // Update transform
+          transform.x = targetPos.x;
+          transform.y = targetPos.y;
+          transform.visualX = targetPos.x;
+          transform.visualY = targetPos.y;
+          
+          // Remove reached waypoint
+          movement.currentPath.shift();
+        } else {
+          // Move failed (tile became occupied), recalculate
+          movement.currentPath = null;
+          this.requestNewPath(world, entityId, movement);
+        }
+      } else {
+        // Move toward waypoint (visual interpolation only)
+        const ratio = distance / distToTarget;
+        transform.visualX += dx * ratio;
+        transform.visualY += dy * ratio;
+        
+        // DON'T update grid position until fully reached
+        // This prevents units from blocking tiles they haven't entered yet
+      }
+    });
+  }
+  
+  private requestNewPath(world: World, entityId: EntityId, movement: MovementComponent): void {
+    const ai = world.getComponent<AIComponent>(entityId, ComponentType.AI);
+    const combat = world.getComponent<CombatComponent>(entityId, ComponentType.Combat);
+    
+    if (ai && combat && combat.target) {
+      // Recalculate path to target
+      const transform = world.getComponent<TransformComponent>(entityId, ComponentType.Transform);
+      const targetTransform = world.getComponent<TransformComponent>(combat.target, ComponentType.Transform);
+      
+      if (transform && targetTransform) {
+        const pathfinder = world.getPathfinder();
+        const newPath = pathfinder.findPath(
+          getGridPosition(transform),
+          getGridPosition(targetTransform)
+        );
+        movement.currentPath = newPath.length > 1 ? newPath.slice(1) : null; // Skip current position
+      }
+    }
+  }
+}
+```
+
+---
+
+## 4. Updated Pathfinding with Occupancy Awareness
+
+```typescript
+class Pathfinder {
+  private gridManager: GridManager;
+  
+  constructor(gridManager: GridManager) {
+    this.gridManager = gridManager;
+  }
+  
+  public findPath(start: GridPosition, goal: GridPosition): GridPosition[] {
+    // Don't path to occupied goal (unless it's the target enemy)
+    // Allow pathing TO occupied tile (for melee range), but not THROUGH occupied tiles
+    
+    const openSet: PathNode[] = [];
+    const closedSet = new Set<string>();
+    
+    const startNode: PathNode = {
+      pos: start,
+      g: 0,
+      h: this.heuristic(start, goal),
+      f: 0,
+      parent: null,
+    };
+    startNode.f = startNode.g + startNode.h;
+    
+    openSet.push(startNode);
+    
+    while (openSet.length > 0) {
+      openSet.sort((a, b) => a.f - b.f);
+      const current = openSet.shift()!;
+      
+      // Goal reached
+      if (current.pos.x === goal.x && current.pos.y === goal.y) {
+        return this.reconstructPath(current);
+      }
+      
+      closedSet.add(this.posKey(current.pos));
+      
+      // Check neighbors
+      const neighbors = this.getNeighbors(current.pos);
+      
+      for (const neighborPos of neighbors) {
+        if (closedSet.has(this.posKey(neighborPos))) continue;
+        
+        // Allow moving TO goal even if occupied, but not through other occupied tiles
+        const isGoal = neighborPos.x === goal.x && neighborPos.y === goal.y;
+        if (!isGoal && !this.gridManager.isWalkable(neighborPos.x, neighborPos.y)) {
+          continue;
+        }
+        
+        const g = current.g + 1;
+        const h = this.heuristic(neighborPos, goal);
+        const f = g + h;
+        
+        const existing = openSet.find(n => 
+          n.pos.x === neighborPos.x && n.pos.y === neighborPos.y
+        );
+        
+        if (existing && g >= existing.g) continue;
+        
+        const neighborNode: PathNode = {
+          pos: neighborPos,
+          g, h, f,
+          parent: current,
+        };
+        
+        if (existing) {
+          Object.assign(existing, neighborNode);
+        } else {
+          openSet.push(neighborNode);
+        }
+      }
+    }
+    
+    // No path found - try to get as close as possible
+    return this.findPathToNearest(start, goal);
+  }
+  
+  private findPathToNearest(start: GridPosition, goal: GridPosition): GridPosition[] {
+    // Find nearest walkable tile to goal
+    const nearestEmpty = this.gridManager.findNearestEmptyTile(goal.x, goal.y);
+    
+    if (!nearestEmpty) {
+      return []; // Completely blocked
+    }
+    
+    // Path to nearest empty tile instead
+    return this.findPath(start, nearestEmpty);
+  }
+  
+  private heuristic(a: GridPosition, b: GridPosition): number {
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  }
+  
+  private getNeighbors(pos: GridPosition): GridPosition[] {
+    return [
+      { x: pos.x + 1, y: pos.y },
+      { x: pos.x - 1, y: pos.y },
+      { x: pos.x, y: pos.y + 1 },
+      { x: pos.x, y: pos.y - 1 },
+      // Optional: Add diagonal movement
+      // { x: pos.x + 1, y: pos.y + 1 },
+      // { x: pos.x + 1, y: pos.y - 1 },
+      // { x: pos.x - 1, y: pos.y + 1 },
+      // { x: pos.x - 1, y: pos.y - 1 },
+    ].filter(p => this.gridManager.isInBounds(p.x, p.y));
+  }
+  
+  private posKey(pos: GridPosition): string {
+    return `${pos.x},${pos.y}`;
+  }
+  
+  private reconstructPath(node: PathNode): GridPosition[] {
+    const path: GridPosition[] = [];
+    let current: PathNode | null = node;
+    
+    while (current) {
+      path.unshift(current.pos);
+      current = current.parent;
+    }
+    
+    return path;
+  }
+}
+```
+
+---
+
+## 5. Fixed Entity Spawning
+
+```typescript
+class CombatSimulation {
+  private world: World;
+  private gridManager: GridManager;
+  private pathfinder: Pathfinder;
+  
+  constructor(gridWidth: number, gridHeight: number) {
+    this.gridManager = new GridManager(gridWidth, gridHeight);
+    this.pathfinder = new Pathfinder(this.gridManager);
+    this.world = new World(this.gridManager, this.pathfinder);
+    // ... initialize systems
+  }
+  
+  public spawnHero(heroType: string, x: number, y: number): EntityId | null {
+    // Check if position is available
+    if (!this.gridManager.isWalkable(x, y)) {
+      console.warn(`Cannot spawn hero at (${x},${y}) - tile occupied`);
+      
+      // Find nearest empty tile
+      const nearestEmpty = this.gridManager.findNearestEmptyTile(x, y);
+      if (!nearestEmpty) {
+        console.error("No available spawn positions near requested location");
+        return null;
+      }
+      
+      console.log(`Spawning hero at nearest empty tile: (${nearestEmpty.x},${nearestEmpty.y})`);
+      x = nearestEmpty.x;
+      y = nearestEmpty.y;
+    }
+    
+    const id = this.world.createEntity();
+    
+    // Reserve grid position FIRST
+    const reserved = this.gridManager.occupy(x, y, id);
+    if (!reserved) {
+      console.error("Failed to reserve grid position");
+      this.world.destroyEntity(id);
+      return null;
+    }
+    
+    // Add components
+    this.world.addComponent(id, {
+      type: ComponentType.Transform,
+      x, y,
+      visualX: x,
+      visualY: y,
+      facing: Direction.Right,
+    });
+    
+    // ... add other components
+    
+    return id;
+  }
+  
+  public spawnEnemy(enemyType: string, x: number, y: number): EntityId | null {
+    // Same logic as spawnHero
+    return this.spawnHero(enemyType, x, y);
+  }
+}
+```
+
+---
+
+## 6. Updated World Class with Grid Integration
+
+```typescript
+class World {
+  private entities: Map<EntityId, Entity> = new Map();
+  private components: Map<ComponentType, Map<EntityId, any>> = new Map();
+  private gameTime: number = 0;
+  private gridManager: GridManager;
+  private pathfinder: Pathfinder;
+  
+  constructor(gridManager: GridManager, pathfinder: Pathfinder) {
+    this.gridManager = gridManager;
+    this.pathfinder = pathfinder;
+    
+    Object.values(ComponentType).forEach(type => {
+      this.components.set(type, new Map());
+    });
+  }
+  
+  public getGridManager(): GridManager {
+    return this.gridManager;
+  }
+  
+  public getPathfinder(): Pathfinder {
+    return this.pathfinder;
+  }
+  
+  public destroyEntity(id: EntityId): void {
+    const entity = this.entities.get(id);
+    if (!entity) return;
+    
+    // Free grid position
+    const transform = this.getComponent<TransformComponent>(id, ComponentType.Transform);
+    if (transform) {
+      const gridPos = getGridPosition(transform);
+      this.gridManager.vacate(gridPos.x, gridPos.y);
+    }
+    
+    // Remove all components
+    entity.components.forEach(type => {
+      this.components.get(type)?.delete(id);
+    });
+    this.entities.delete(id);
+  }
+  
+  // ... rest of World methods
+}
+```
+
+---
+
+## 7. Combat Range Checking (Don't Need Adjacent Tile)
+
+```typescript
+class CombatSystem extends System {
+  update(world: World, deltaTime: number): void {
+    const combatEntities = world.query(ComponentType.Combat, ComponentType.Transform);
+    
+    combatEntities.forEach(attackerId => {
+      const combat = world.getComponent<CombatComponent>(attackerId, ComponentType.Combat);
+      const transform = world.getComponent<TransformComponent>(attackerId, ComponentType.Transform);
+      
+      if (!combat || !transform) return;
+      
+      const timeSinceLastAttack = world.getGameTime() - combat.lastAttackTime;
+      const attackCooldown = 1 / combat.attackSpeed;
+      
+      if (timeSinceLastAttack < attackCooldown) return;
+      
+      // Find or validate target
+      if (!combat.target || !world.hasComponent(combat.target, ComponentType.Health)) {
+        combat.target = this.findNearestTarget(world, attackerId, transform, combat.attackRange);
+      }
+      
+      if (!combat.target) return;
+      
+      const targetTransform = world.getComponent<TransformComponent>(combat.target, ComponentType.Transform);
+      if (!targetTransform) return;
+      
+      // Check if in attack range
+      const distance = this.getGridDistance(
+        getGridPosition(transform),
+        getGridPosition(targetTransform)
+      );
+      
+      if (distance > combat.attackRange) {
+        combat.target = null; // Out of range
+        return;
+      }
+      
+      // Execute attack
+      this.dealDamage(world, combat.target, combat.damage);
+      combat.lastAttackTime = world.getGameTime();
+    });
+  }
+  
+  private getGridDistance(a: GridPosition, b: GridPosition): number {
+    // Manhattan distance (for grid-based combat)
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    
+    // OR Euclidean distance (for more natural range)
+    // const dx = a.x - b.x;
+    // const dy = a.y - b.y;
+    // return Math.sqrt(dx * dx + dy * dy);
+  }
+  
+  private findNearestTarget(
+    world: World,
+    attackerId: EntityId,
+    attackerTransform: TransformComponent,
+    range: number
+  ): EntityId | null {
+    const potentialTargets = world.query(ComponentType.Health, ComponentType.Transform);
+    const validTargets = potentialTargets.filter(id => id !== attackerId);
+    
+    let nearest: EntityId | null = null;
+    let nearestDist = Infinity;
+    
+    const attackerGridPos = getGridPosition(attackerTransform);
+    
+    validTargets.forEach(targetId => {
+      const targetTransform = world.getComponent<TransformComponent>(targetId, ComponentType.Transform);
+      if (!targetTransform) return;
+      
+      const targetGridPos = getGridPosition(targetTransform);
+      const dist = this.getGridDistance(attackerGridPos, targetGridPos);
+      
+      if (dist <= range && dist < nearestDist) {
+        nearest = targetId;
+        nearestDist = dist;
+      }
+    });
+    
+    return nearest;
+  }
+  
+  // ... rest of combat methods
+}
+```
+
+---
+
+## 8. AI System Updates for Collision Awareness
+
+```typescript
+class AISystem extends System {
+  update(world: World, deltaTime: number): void {
+    const aiEntities = world.query(ComponentType.AI, ComponentType.Transform, ComponentType.Combat);
+    
+    aiEntities.forEach(entityId => {
+      const ai = world.getComponent<AIComponent>(entityId, ComponentType.AI);
+      const transform = world.getComponent<TransformComponent>(entityId, ComponentType.Transform);
+      const combat = world.getComponent<CombatComponent>(entityId, ComponentType.Combat);
+      
+      if (!ai || !transform || !combat) return;
+      
+      switch (ai.behavior) {
+        case AIBehavior.MeleeAggressive:
+          this.meleeAggressiveBehavior(world, entityId, ai, transform, combat);
+          break;
+        // ... other behaviors
+      }
+    });
+  }
+  
+  private meleeAggressiveBehavior(
+    world: World,
+    entityId: EntityId,
+    ai: AIComponent,
+    transform: TransformComponent,
+    combat: CombatComponent
+  ): void {
+    const gridManager = world.getGridManager();
+    const currentGridPos = getGridPosition(transform);
+    
+    if (combat.target && world.hasComponent(combat.target, ComponentType.Health)) {
+      const targetTransform = world.getComponent<TransformComponent>(combat.target, ComponentType.Transform);
+      if (!targetTransform) return;
+      
+      const targetGridPos = getGridPosition(targetTransform);
+      const distance = this.getGridDistance(currentGridPos, targetGridPos);
+      
+      if (distance > combat.attackRange) {
+        // Need to move closer
+        ai.state = AIState.Moving;
+        const movement = world.getComponent<MovementComponent>(entityId, ComponentType.Movement);
+        
+        if (movement && (!movement.currentPath || movement.currentPath.length === 0)) {
+          // Calculate new path
+          const pathfinder = world.getPathfinder();
+          
+          // Path to adjacent tile (within attack range)
+          const adjacentTiles = this.getAdjacentTiles(targetGridPos);
+          const walkableAdjacent = adjacentTiles.filter(pos => 
+            gridManager.isWalkable(pos.x, pos.y)
+          );
+          
+          if (walkableAdjacent.length > 0) {
+            // Path to nearest walkable adjacent tile
+            const nearest = this.findNearestTile(currentGridPos, walkableAdjacent);
+            const path = pathfinder.findPath(currentGridPos, nearest);
+            
+            if (path.length > 1) {
+              movement.currentPath = path.slice(1); // Skip current position
+            } else {
+              // No path found, try direct approach
+              const directPath = pathfinder.findPath(currentGridPos, targetGridPos);
+              movement.currentPath = directPath.length > 1 ? directPath.slice(1) : null;
+            }
+          } else {
+            // All adjacent tiles occupied, wait or find alternative
+            ai.state = AIState.Idle;
+            movement.currentPath = null;
+          }
+        }
+      } else {
+        // In range, attack handled by CombatSystem
+        ai.state = AIState.Attacking;
+        
+        // Stop movement
+        const movement = world.getComponent<MovementComponent>(entityId, ComponentType.Movement);
+        if (movement) {
+          movement.currentPath = null;
+        }
+      }
+    } else {
+      // No target, find one
+      ai.state = AIState.Idle;
+      const nearestEnemy = this.findNearestEnemy(world, entityId, transform);
+      if (nearestEnemy) {
+        combat.target = nearestEnemy;
+      }
+    }
+  }
+  
+  private getAdjacentTiles(pos: GridPosition): GridPosition[] {
+    return [
+      { x: pos.x + 1, y: pos.y },
+      { x: pos.x - 1, y: pos.y },
+      { x: pos.x, y: pos.y + 1 },
+      { x: pos.x, y: pos.y - 1 },
+    ];
+  }
+  
+  private findNearestTile(from: GridPosition, candidates: GridPosition[]): GridPosition {
+    let nearest = candidates[0];
+    let nearestDist = this.getGridDistance(from, nearest);
+    
+    candidates.forEach(pos => {
+      const dist = this.getGridDistance(from, pos);
+      if (dist < nearestDist) {
+        nearest = pos;
+        nearestDist = dist;
+      }
+    });
+    
+    return nearest;
+  }
+  
+  private getGridDistance(a: GridPosition, b: GridPosition): number {
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  }
+  
+  // ... rest of AI methods
+}
+```
+
+---
+
+## 9. Debug Visualization
+
+```typescript
+function CombatArena() {
+  const simulationRef = useRef<CombatSimulation>();
+  const [gameState, setGameState] = useState<GameState>();
+  const [debugMode, setDebugMode] = useState(false);
+  
+  // ... existing code
+  
+  return (
+    <div className="combat-arena">
+      <GridRenderer 
+        entities={gameState?.entities || []}
+        debugMode={debugMode}
+      />
+      
+      <div className="controls">
+        <button onClick={() => setDebugMode(!debugMode)}>
+          Toggle Debug Grid
+        </button>
+        <button onClick={() => {
+          const grid = simulationRef.current?.getGridManager();
+          grid?.printOccupancy();
+        }}>
+          Print Occupancy to Console
+        </button>
+      </div>
+      
+      {debugMode && <OccupancyOverlay simulation={simulationRef.current} />}
+    </div>
+  );
+}
+
+function OccupancyOverlay({ simulation }: { simulation?: CombatSimulation }) {
+  if (!simulation) return null;
+  
+  const gridManager = simulation.getGridManager();
+  const occupancyMap = gridManager.getOccupancyMap();
+  
+  return (
+    <div className="occupancy-overlay">
+      {occupancyMap.map((row, y) => (
+        <div key={y} className="occupancy-row">
+          {row.map((cell, x) => (
+            <div 
+              key={x}
+              className={`occupancy-cell ${cell === 'X' ? 'occupied' : 'empty'}`}
+              style={{
+                gridColumn: x + 1,
+                gridRow: y + 1,
+              }}
+            >
+              {cell}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+## 10. Common Pitfalls & Fixes
+
+### Pitfall 1: Fractional Positions
+
+**Problem:** Using `transform.x = 5.7` and treating it as grid position
+
+**Fix:** Always floor positions when checking grid:
+```typescript
+const gridPos = {
+  x: Math.floor(transform.x),
+  y: Math.floor(transform.y),
+};
+```
+
+### Pitfall 2: Moving Without Checking Destination
+
+**Problem:** 
+```typescript
+// BAD
+transform.x = targetX;
+transform.y = targetY;
+```
+
+**Fix:**
+```typescript
+// GOOD
+const success = gridManager.move(entityId, currentX, currentY, targetX, targetY);
+if (success) {
+  transform.x = targetX;
+  transform.y = targetY;
+}
+```
+
+### Pitfall 3: Forgetting to Vacate on Death
+
+**Problem:** Dead units still occupy tiles
+
+**Fix:**
+```typescript
+public destroyEntity(id: EntityId): void {
+  const transform = this.getComponent<TransformComponent>(id, ComponentType.Transform);
+  if (transform) {
+    const gridPos = getGridPosition(transform);
+    this.gridManager.vacate(gridPos.x, gridPos.y); // CRITICAL
+  }
+  
+  // ... rest of cleanup
+}
+```
+
+### Pitfall 4: Race Conditions in Movement
+
+**Problem:** Two units both see tile as empty, both move there
+
+**Fix:** Use atomic move operation:
+```typescript
+// GridManager.move() is atomic - only one succeeds
+const success = gridManager.move(id, fromX, fromY, toX, toY);
+if (!success) {
+  // Re-path around obstacle
+}
+```
+
+### Pitfall 5: Pathfinding Ignoring Occupancy
+
+**Problem:** A* paths through occupied tiles
+
+**Fix:**
+```typescript
+// In pathfinding neighbor check
+for (const neighborPos of neighbors) {
+  if (!gridManager.isWalkable(neighborPos.x, neighborPos.y)) {
+    continue; // Skip occupied tiles
+  }
+  // ... rest of A*
+}
+```
+
+---
+
+## 11. Testing Checklist
+
+```typescript
+describe("Grid Collision System", () => {
+  let simulation: CombatSimulation;
+  
+  beforeEach(() => {
+    simulation = new CombatSimulation(12, 12);
+  });
+  
+  it("should prevent spawning on occupied tile", () => {
+    const hero1 = simulation.spawnHero("Knight", 5, 5);
+    const hero2 = simulation.spawnHero("Knight", 5, 5); // Same position
+    
+    expect(hero1).not.toBeNull();
+    expect(hero2).not.toBeNull();
+    
+    // Hero2 should be spawned at different position
+    const world = simulation.getWorld();
+    const transform1 = world.getComponent<TransformComponent>(hero1!, ComponentType.Transform);
+    const transform2 = world.getComponent<TransformComponent>(hero2!, ComponentType.Transform);
+    
+    expect(transform1!.x).not.toBe(transform2!.x);
+    expect(transform1!.y).not.toBe(transform2!.y);
+  });
+  
+  it("should prevent units from moving to occupied tiles", () => {
+    const hero1 = simulation.spawnHero("Knight", 5, 5);
+    const hero2 = simulation.spawnHero("Knight", 6, 5);
+    
+    // Try to move hero2 onto hero1's tile
+    const world = simulation.getWorld();
+    const gridManager = world.getGridManager();
+    
+    const success = gridManager.move(hero2!, 6, 5, 5, 5);
+    
+    expect(success).toBe(false);
+    
+    // Hero2 should still be at original position
+    const transform = world.getComponent<TransformComponent>(hero2!, ComponentType.Transform);
+    expect(transform!.x).toBe(6);
+    expect(transform!.y).toBe(5);
+  });
+  
+  it("should free tile when unit dies", () => {
+    const hero = simulation.spawnHero("Knight", 5, 5);
+    const world = simulation.getWorld();
+    const gridManager = world.getGridManager();
+    
+    expect(gridManager.isOccupied(5, 5)).toBe(true);
+    
+    world.destroyEntity(hero!);
+    
+    expect(gridManager.isOccupied(5, 5)).toBe(false);
+  });
+  
+  it("should path around occupied tiles", () => {
+    const hero = simulation.spawnHero("Knight", 2, 5);
+    const blocker1 = simulation.spawnHero("Knight", 3, 5);
+    const blocker2 = simulation.spawnHero("Knight", 4, 5);
+    const enemy = simulation.spawnEnemy("Wolf", 5, 5);
+    
+    // Run simulation
+    for (let i = 0; i < 100; i++) {
+      simulation.tick(0.1);
+    }
+    
+    const world = simulation.getWorld();
+    const transform = world.getComponent<TransformComponent>(hero!, ComponentType.Transform);
+    
+    // Hero should path around blockers (up or down)
+    expect(transform!.y).not.toBe(5); // Moved vertically to avoid blockers
+  });
+  
+  it("should handle multiple units converging on same target", () => {
+    const enemy = simulation.spawnEnemy("Wolf", 10, 10);
+    const heroes: EntityId[] = [];
+    
+    // Spawn 4 heroes around enemy
+    heroes.push(simulation.spawnHero("Knight", 5, 10)!);
+    heroes.push(simulation.spawnHero("Knight", 5, 11)!);
+    heroes.push(simulation.spawnHero("Knight", 5, 9)!);
+    heroes.push(simulation.spawnHero("Knight", 5, 8)!);
+    
+    // Run simulation
+    for (let i = 0; i < 200; i++) {
+      simulation.tick(0.1);
+    }
+    
+    // All heroes should surround enemy without stacking
+    const world = simulation.getWorld();
+    const positions = heroes.map(id => {
+      const t = world.getComponent<TransformComponent>(id, ComponentType.Transform);
+      return `${Math.floor(t!.x)},${Math.floor(t!.y)}`;
+    });
+    
+    const uniquePositions = new Set(positions);
+    expect(uniquePositions.size).toBe(heroes.length); // All in different positions
+  });
+});
+```
+
+---
+
+## 12. Performance Considerations
+
+### Grid Manager is Fast
+- `O(1)` occupancy lookups (Map with string key)
+- `O(1)` movement validation
+- No iteration over all entities
+
+### Spatial Queries
+If you need frequent "find all entities in radius" queries:
+
+```typescript
+class GridManager {
+  private spatialIndex: Map<string, EntityId[]> = new Map();
+  private bucketSize: number = 3; // 3×3 tile buckets
+  
+  public occupy(x: number, y: number, entityId: EntityId): boolean {
+    if (!super.occupy(x, y, entityId)) return false;
+    
+    // Add to spatial index
+    const bucket = this.getBucket(x, y);
+    if (!this.spatialIndex.has(bucket)) {
+      this.spatialIndex.set(bucket, []);
+    }
+    this.spatialIndex.get(bucket)!.push(entityId);
+    
+    return true;
+  }
+  
+  public queryRadius(x: number, y: number, radius: number): EntityId[] {
+    const results: Set<EntityId> = new Set();
+    
+    // Query affected buckets
+    const bucketsToCheck = this.getBucketsInRadius(x, y, radius);
+    
+    bucketsToCheck.forEach(bucket => {
+      const entities = this.spatialIndex.get(bucket) || [];
+      entities.forEach(id => results.add(id));
+    });
+    
+    return Array.from(results);
+  }
+  
+  private getBucket(x: number, y: number): string {
+    const bx = Math.floor(x / this.bucketSize);
+    const by = Math.floor(y / this.bucketSize);
+    return `${bx},${by}`;
+  }
+  
+  private getBucketsInRadius(x: number, y: number, radius: number): string[] {
+    const buckets: string[] = [];
+    const minBx = Math.floor((x - radius) / this.bucketSize);
+    const maxBx = Math.floor((x + radius) / this.bucketSize);
+    const minBy = Math.floor((y - radius) / this.bucketSize);
+    const maxBy = Math.floor((y + radius) / this.bucketSize);
+    
+    for (let bx = minBx; bx <= maxBx; bx++) {
+      for (let by = minBy; by <= maxBy; by++) {
+        buckets.push(`${bx},${by}`);
+      }
+    }
+    
+    return buckets;
+  }
+}
+```
+
+---
+
+## Summary: What Fixes Unit Stacking
+
+✅ **GridManager** - Single source of truth for tile occupancy
+✅ **Integer grid positions** - Clear which tile a unit occupies
+✅ **Atomic move operations** - Only one unit can move to a tile
+✅ **Collision-aware pathfinding** - A* avoids occupied tiles
+✅ **Safe spawning** - Find nearest empty tile if requested tile occupied
+✅ **Proper cleanup** - Vacate tiles when units die
+✅ **Attack range checking** - Don't require adjacent tile to attack
+
+**The root issue is always: Movement/spawning code doesn't check `gridManager.isWalkable()` before changing position.**
+
+**Fix: Every position change goes through `GridManager.move()` or `GridManager.occupy()`.**
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** December 2025  
+**Contributors:** Alex (Design Lead), Claude (Architecture Advisor)
+
+**Status:** Critical Fix - Implement Immediately

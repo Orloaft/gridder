@@ -80,7 +80,7 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
       </div>
 
       {/* Occupants rendered on top */}
-      <div ref={ref} className="absolute inset-0 pointer-events-none">
+      <div ref={ref} className="absolute inset-0 pointer-events-none" style={{ overflow: 'hidden' }}>
         {occupants.map((occupant) => (
           <div
             key={occupant.id}

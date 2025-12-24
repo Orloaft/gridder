@@ -22,7 +22,8 @@ export function createShopLayout(
   _navigate: (screen: ScreenType) => void,
   onPurchaseItem: (itemId: string) => void,
   onPurchaseHero: (heroId: string) => void,
-  onRefreshShop: () => void
+  onRefreshShop: () => void,
+  onItemHover?: (item: Item | null) => void
 ): AnyGridOccupant[] {
   // Use the global transition-aware navigate function
   const navigate = (screen: ScreenType) => {
@@ -93,6 +94,8 @@ export function createShopLayout(
       variant: canAfford ? 'primary' : 'secondary',
       disabled: !canAfford,
       onClick: canAfford ? () => onPurchaseItem(item.id) : () => {},
+      onMouseEnter: onItemHover ? () => onItemHover(item) : undefined,
+      onMouseLeave: onItemHover ? () => onItemHover(null) : undefined,
       animationDelay: 0.4 + index * 0.03,
     });
   });

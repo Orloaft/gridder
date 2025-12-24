@@ -13,6 +13,7 @@ export enum GridOccupantType {
   StatusPanel = 'statusPanel',
   Resource = 'resource',
   Decoration = 'decoration',
+  Item = 'item',
 }
 
 // Base interface for all grid occupants
@@ -42,6 +43,10 @@ export interface GridHero extends BaseGridOccupant {
   onDrop?: (heroId: string) => void;
   onItemDrop?: (itemId: string) => void; // For equipping items
   onClick?: () => void;
+  // Hero unlock system
+  locked?: boolean; // If true, shows dark overlay
+  lockCost?: number; // Cost to unlock (gems)
+  lockCurrency?: 'gems' | 'gold'; // Currency type for unlock
 }
 
 // Enemy occupant
@@ -99,7 +104,17 @@ export interface GridDecoration extends BaseGridOccupant {
   type: GridOccupantType.Decoration;
   spritePath?: string;
   text?: string;
-  style?: 'title' | 'subtitle' | 'banner';
+  style?: 'title' | 'subtitle' | 'banner' | 'flash' | 'icon' | 'chest' | 'legendary' | 'slot-machine' | 'particle';
+}
+
+// Item occupant (loot rewards)
+export interface GridItem extends BaseGridOccupant {
+  type: GridOccupantType.Item;
+  name: string;
+  icon: string;
+  rarity: string;
+  value?: number;
+  onClick?: () => void;
 }
 
 // Union type of all possible occupants
@@ -110,7 +125,8 @@ export type AnyGridOccupant =
   | GridMenuItem
   | GridStatusPanel
   | GridResource
-  | GridDecoration;
+  | GridDecoration
+  | GridItem;
 
 // Type guards for safe type checking
 export function isGridHero(occupant: AnyGridOccupant): occupant is GridHero {
@@ -139,4 +155,8 @@ export function isGridResource(occupant: AnyGridOccupant): occupant is GridResou
 
 export function isGridDecoration(occupant: AnyGridOccupant): occupant is GridDecoration {
   return occupant.type === GridOccupantType.Decoration;
+}
+
+export function isGridItem(occupant: AnyGridOccupant): occupant is GridItem {
+  return occupant.type === GridOccupantType.Item;
 }

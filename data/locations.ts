@@ -21,16 +21,16 @@ export interface Location {
 }
 
 export const LOCATIONS: Location[] = [
-  // === COMBAT LOCATIONS (8 locations × 64 stages each = 512 stages total) ===
+  // === COMBAT LOCATIONS (8 locations × 16 stages each = 128 stages total) ===
 
-  // Location 1: Darkwood Forest (Stages 1-64) - Tutorial/Early game
+  // Location 1: Darkwood Forest (Stages 1-16) - Tutorial/Early game
   {
     id: 'darkwood',
     name: 'Darkwood Forest',
     type: LocationType.Combat,
     description: 'A shadowy forest crawling with plague rats and restless spirits. Begin your journey here.',
     spritePath: '/icons/location/darkwood.PNG',
-    stageRange: { start: 1, end: 64 },
+    stageRange: { start: 1, end: 16 },
     gridSize: { rows: 8, cols: 8 },
     maxTeamSize: 3,
   },
@@ -45,27 +45,27 @@ export const LOCATIONS: Location[] = [
     unlockRequirement: 'darkwood',
   },
 
-  // Location 2: Grave Gate Cemetery (Stages 65-128)
+  // Location 2: Grave Gate Cemetery (Stages 17-32)
   {
     id: 'gravegate',
     name: 'Grave Gate',
     type: LocationType.Combat,
     description: 'An ancient cemetery where the dead refuse to rest. Bone constructs and wraiths guard cursed tombs.',
     spritePath: '/icons/location/gravegate.PNG',
-    stageRange: { start: 65, end: 128 },
+    stageRange: { start: 17, end: 32 },
     gridSize: { rows: 8, cols: 8 },
     maxTeamSize: 4,
     unlockRequirement: 'darkwood',
   },
 
-  // Location 3: Ruined Fort (Stages 129-192)
+  // Location 3: Ruined Fort (Stages 33-48)
   {
     id: 'ruinfort',
     name: 'Ruined Fort',
     type: LocationType.Combat,
     description: 'A crumbling fortress overrun by cultists and shadow beasts. Strategic positioning is key.',
     spritePath: '/icons/location/ruinfort.PNG',
-    stageRange: { start: 129, end: 192 },
+    stageRange: { start: 33, end: 48 },
     gridSize: { rows: 8, cols: 8 },
     maxTeamSize: 5,
     unlockRequirement: 'gravegate',
@@ -81,27 +81,27 @@ export const LOCATIONS: Location[] = [
     unlockRequirement: 'ruinfort',
   },
 
-  // Location 4: Black Shrine (Stages 193-256)
+  // Location 4: Black Shrine (Stages 49-64)
   {
     id: 'blackshrine',
     name: 'Black Shrine',
     type: LocationType.Combat,
     description: 'A corrupted temple where dark rituals empower unholy creatures. Expect fierce resistance.',
     spritePath: '/icons/location/blackshrine.PNG',
-    stageRange: { start: 193, end: 256 },
+    stageRange: { start: 49, end: 64 },
     gridSize: { rows: 8, cols: 8 },
     maxTeamSize: 6,
     unlockRequirement: 'ruinfort',
   },
 
-  // Location 5: Lava River Crossing (Stages 257-320) - Grid expands to 10x10
+  // Location 5: Lava River Crossing (Stages 65-80) - Grid expands to 10x10
   {
     id: 'lavariver',
     name: 'Lava River',
     type: LocationType.Combat,
     description: 'Molten rivers of fire separate you from gargoyles and flame-scorched undead. The battlefield expands.',
     spritePath: '/icons/location/lavariver.PNG',
-    stageRange: { start: 257, end: 320 },
+    stageRange: { start: 65, end: 80 },
     gridSize: { rows: 10, cols: 10 },
     maxTeamSize: 7,
     unlockRequirement: 'blackshrine',
@@ -117,27 +117,27 @@ export const LOCATIONS: Location[] = [
     unlockRequirement: 'lavariver',
   },
 
-  // Location 6: Sand Temple (Stages 321-384) - Grid expands to 12x12
+  // Location 6: Sand Temple (Stages 81-96) - Grid expands to 12x12
   {
     id: 'sandtemple',
     name: 'Sand Temple',
     type: LocationType.Combat,
     description: 'An ancient desert temple guarded by sand-cursed warriors and necromancers. Vast battle arenas await.',
     spritePath: '/icons/location/sandtemple.PNG',
-    stageRange: { start: 321, end: 384 },
+    stageRange: { start: 81, end: 96 },
     gridSize: { rows: 12, cols: 12 },
     maxTeamSize: 8,
     unlockRequirement: 'lavariver',
   },
 
-  // Location 7: Ruin Peak Spire (Stages 385-448) - Grid expands to 14x14
+  // Location 7: Ruin Peak Spire (Stages 97-112) - Grid expands to 14x14
   {
     id: 'ruinpeakspire',
     name: 'Ruin Peak',
     type: LocationType.Combat,
     description: 'A towering spire lost in the clouds. Epic battles rage across massive floors.',
     spritePath: '/icons/location/ruinpeakspire.PNG',
-    stageRange: { start: 385, end: 448 },
+    stageRange: { start: 97, end: 112 },
     gridSize: { rows: 14, cols: 14 },
     maxTeamSize: 10,
     unlockRequirement: 'sandtemple',
@@ -153,14 +153,14 @@ export const LOCATIONS: Location[] = [
     unlockRequirement: 'ruinpeakspire',
   },
 
-  // Location 8: Black Spire (Stages 449-512) - FINAL LOCATION - Grid expands to 16x16
+  // Location 8: Black Spire (Stages 113-128) - FINAL LOCATION - Grid expands to 16x16
   {
     id: 'blackspire',
     name: 'Black Spire',
     type: LocationType.Combat,
     description: 'The source of all darkness. Face the ultimate evil across colossal battlefields.',
     spritePath: '/icons/location/blackpire.PNG',
-    stageRange: { start: 449, end: 512 },
+    stageRange: { start: 113, end: 128 },
     gridSize: { rows: 16, cols: 16 },
     maxTeamSize: 12,
     unlockRequirement: 'ruinpeakspire',
@@ -208,14 +208,11 @@ export function isLocationUnlocked(
     const requiredLocation = getLocationById(location.unlockRequirement);
     if (!requiredLocation) return false;
 
-    // For combat locations, check if all stages are completed
+    // For combat locations, check if the mission (first stage) is completed
+    // Each location now represents a single multi-wave mission
     if (requiredLocation.stageRange) {
-      const allStagesCompleted = Array.from(
-        { length: requiredLocation.stageRange.end - requiredLocation.stageRange.start + 1 },
-        (_, i) => requiredLocation.stageRange!.start + i
-      ).every((stageId) => completedStages.has(stageId));
-
-      return allStagesCompleted;
+      const missionStageId = requiredLocation.stageRange.start;
+      return completedStages.has(missionStageId);
     }
 
     // For non-combat locations, just need to have them unlocked (check their unlock requirement)
