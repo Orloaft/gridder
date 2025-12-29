@@ -2,11 +2,11 @@
 
 // Rarity levels for items and heroes
 export enum Rarity {
-  Common = 'common',
-  Uncommon = 'uncommon',
-  Rare = 'rare',
-  Epic = 'epic',
-  Legendary = 'legendary',
+  Common = 'common',        // 70% drop rate, 3 durability
+  Uncommon = 'uncommon',    // 20% drop rate, 5 durability
+  Rare = 'rare',            // 8% drop rate, 7 durability
+  Legendary = 'legendary',  // 2% drop rate, 10 durability
+  Mythic = 'mythic',        // 0.1% drop rate, infinite durability
 }
 
 // Difficulty levels
@@ -195,6 +195,15 @@ export interface EnemyTemplate {
 export interface Enemy extends EnemyTemplate {
   instanceId: string;
   currentStats: UnitStats;
+  wave?: number; // Optional wave number for multi-wave battles
+}
+
+// Item categories
+export enum ItemCategory {
+  Weapon = 'weapon',
+  Armor = 'armor',
+  Accessory = 'accessory',
+  Consumable = 'consumable',
 }
 
 // Item effect
@@ -210,13 +219,16 @@ export interface Item {
   name: string;
   description: string;
   rarity: Rarity;
+  category: ItemCategory; // Weapon, Armor, Accessory, or Consumable
   effects: ItemEffect[];
-  spritePath: string;
-  cost: number;
-  slot: 'weapon' | 'armor' | 'accessory';
+  icon?: string; // Icon path (e.g., '/icons/sword.png')
+  spritePath: string; // Deprecated: use icon instead
+  cost: number; // Vendor sell price
+  slot: 'weapon' | 'armor' | 'accessory'; // Equipment slot
   consumable?: boolean; // If true, item is consumed after one use
   permanent?: boolean; // If true, effects are permanent (default: only active when equipped)
-  maxDurability?: number; // Max durability (3/5/7/10 by rarity), undefined for indestructible items
+  maxDurability?: number; // Max durability (3/5/7/10 by rarity), undefined for Mythic (infinite)
+  specialEffect?: string; // Description of special effect (e.g., "Attacks apply Burning")
 }
 
 // Item instance (in player's inventory)

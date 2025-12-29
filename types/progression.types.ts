@@ -68,6 +68,7 @@ export interface CampaignProgress {
   currentStage: number;
   maxStageReached: number;
   stagesCompleted: Set<number>;
+  locationsCompleted: Set<string>;
 }
 
 // Overall game state

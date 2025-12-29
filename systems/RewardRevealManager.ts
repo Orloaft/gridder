@@ -3,12 +3,11 @@ import { Rarity } from '@/types/core.types';
 import { ParticleManager } from './ParticleManager';
 
 export enum RevealPhase {
-  Victory = 'victory',
-  GoldCounter = 'gold-counter',
-  GemCounter = 'gem-counter',
-  ChestAppear = 'chest-appear',
-  ItemReveal = 'item-reveal',
-  Summary = 'summary',
+  Victory = 'victory',          // 1s - Victory banner with celebration
+  Breakdown = 'breakdown',      // 2.5s - Show reward calculation breakdown
+  GachaPrepare = 'gacha-prepare', // 0.5s - Gacha machine appears
+  GachaSpin = 'gacha-spin',     // Variable - Slot machine spins and reveals items
+  Summary = 'summary',          // User controlled - Continue button
   Complete = 'complete',
 }
 
@@ -20,10 +19,20 @@ export interface RewardItem {
   value: number;
 }
 
+export interface RewardBreakdown {
+  baseGold: number;
+  waveMultiplier: number;
+  wavesCompleted: number;
+  medicalCosts: number;
+  casualties: number;
+  finalGold: number;
+}
+
 export interface BattleRewards {
   goldEarned: number;
   gemsEarned: number;
   items: RewardItem[];
+  breakdown?: RewardBreakdown; // Optional performance breakdown
 }
 
 export interface RevealState {
@@ -34,20 +43,27 @@ export interface RevealState {
   revealedItemIndex: number;
   isSkipping: boolean;
   isFastForwarding: boolean;
+  // Breakdown animation state
+  showBaseGold: boolean;
+  showWaveMultiplier: boolean;
+  showMedicalCosts: boolean;
+  showFinalGold: boolean;
+  // Gacha state
+  isSpinning: boolean;
+  spinningItemIndex: number;
 }
 
 export type RevealCallback = (state: RevealState) => void;
 
 /**
- * RewardRevealManager: Orchestrates the multi-phase reward reveal sequence
+ * RewardRevealManager: Orchestrates the gacha-style reward reveal sequence
  *
- * Phases:
- * 0. Victory (1s) - Grid flash with victory banner
- * 1. Gold Counter (2-3s) - Coin drop, counter tick-up, particles
- * 2. Gem Counter (2-3s) - Gem spiral, counter tick-up, rainbow particles
- * 3. Chest Appear (1s) - Chest drop, bounce, shake, lid open
- * 4. Item Reveal (variable) - Slot machine reveals for each item
- * 5. Summary - Total value display, continue button
+ * NEW GACHA PHASES:
+ * 1. Victory (1s) - Victory banner with celebration
+ * 2. Breakdown (2.5s) - Show reward calculation step-by-step
+ * 3. Gacha Prepare (0.5s) - Gacha machine appears
+ * 4. Gacha Spin (variable) - Slot machine reveals items one by one
+ * 5. Summary - Final rewards displayed, user controls continue
  */
 export class RewardRevealManager {
   private rewards: BattleRewards;
@@ -61,22 +77,16 @@ export class RewardRevealManager {
 
   // Phase durations (milliseconds)
   private readonly PHASE_DURATIONS = {
-    [RevealPhase.Victory]: 1000,
-    [RevealPhase.GoldCounter]: 2500,
-    [RevealPhase.GemCounter]: 2500,
-    [RevealPhase.ChestAppear]: 1000,
-    [RevealPhase.ItemReveal]: 0, // Variable per item
-    [RevealPhase.Summary]: 0, // User-controlled
+    [RevealPhase.Victory]: 1000,        // Victory celebration
+    [RevealPhase.Breakdown]: 2500,      // Reward breakdown reveal
+    [RevealPhase.GachaPrepare]: 500,    // Gacha machine appears
+    [RevealPhase.GachaSpin]: 0,         // Variable - depends on items
+    [RevealPhase.Summary]: 0,           // User-controlled
   };
 
-  // Item reveal durations by rarity
-  private readonly ITEM_REVEAL_DURATIONS: Record<Rarity, number> = {
-    [Rarity.Common]: 1000,
-    [Rarity.Uncommon]: 1500,
-    [Rarity.Rare]: 2000,
-    [Rarity.Epic]: 2500,
-    [Rarity.Legendary]: 4000,
-  };
+  // Gacha timing
+  private readonly GACHA_SPIN_TIME = 800;  // Time for slot to spin
+  private readonly GACHA_REVEAL_DELAY = 400; // Delay between each item reveal
 
   constructor(rewards: BattleRewards) {
     this.rewards = rewards;
@@ -89,7 +99,14 @@ export class RewardRevealManager {
       revealedItemIndex: -1,
       isSkipping: false,
       isFastForwarding: false,
+      showBaseGold: false,
+      showWaveMultiplier: false,
+      showMedicalCosts: false,
+      showFinalGold: false,
+      isSpinning: false,
+      spinningItemIndex: -1,
     };
+    console.log('🎮 RewardRevealManager initialized with GACHA phases starting at:', RevealPhase.Victory);
   }
 
   /**
@@ -105,11 +122,23 @@ export class RewardRevealManager {
   }
 
   /**
-   * Skip to next phase
+   * Skip to Summary phase
    */
   public skip(): void {
     this.state.isSkipping = true;
-    this.advancePhase();
+
+    // Jump directly to Summary phase, bypassing all animations
+    this.state.phase = RevealPhase.Summary;
+    this.state.phaseStartTime = Date.now();
+
+    // Trigger Summary phase setup to ensure all values are set
+    this.onPhaseEnter(RevealPhase.Summary);
+
+    // Force immediate callback update
+    if (this.callback) {
+      this.callback(this.state);
+      this.lastCallbackTime = Date.now();
+    }
   }
 
   /**
@@ -166,8 +195,12 @@ export class RewardRevealManager {
     // Update current phase
     this.updatePhase(effectiveDelta);
 
-    // Update particles
-    this.particleManager.update(effectiveDelta);
+    // Update particles (but clear them in Summary phase to avoid clutter)
+    if (this.state.phase === RevealPhase.Summary) {
+      this.particleManager.clear();
+    } else {
+      this.particleManager.update(effectiveDelta);
+    }
 
     // Throttle callback to reduce React re-renders
     // Only update React ~20 times per second instead of 60
@@ -177,8 +210,8 @@ export class RewardRevealManager {
       this.lastCallbackTime = now;
     }
 
-    // Continue animation loop unless complete
-    if (this.state.phase !== RevealPhase.Complete) {
+    // Continue animation loop unless complete or in Summary phase (user-controlled)
+    if (this.state.phase !== RevealPhase.Complete && this.state.phase !== RevealPhase.Summary) {
       this.animationFrameId = requestAnimationFrame(this.animate);
     }
   };
@@ -195,20 +228,16 @@ export class RewardRevealManager {
         this.updateVictoryPhase(phaseElapsed);
         break;
 
-      case RevealPhase.GoldCounter:
-        this.updateGoldCounterPhase(phaseElapsed);
+      case RevealPhase.Breakdown:
+        this.updateBreakdownPhase(phaseElapsed);
         break;
 
-      case RevealPhase.GemCounter:
-        this.updateGemCounterPhase(phaseElapsed);
+      case RevealPhase.GachaPrepare:
+        this.updateGachaPreparePhase(phaseElapsed);
         break;
 
-      case RevealPhase.ChestAppear:
-        this.updateChestAppearPhase(phaseElapsed);
-        break;
-
-      case RevealPhase.ItemReveal:
-        this.updateItemRevealPhase(phaseElapsed);
+      case RevealPhase.GachaSpin:
+        this.updateGachaSpinPhase(phaseElapsed);
         break;
 
       case RevealPhase.Summary:
@@ -224,16 +253,20 @@ export class RewardRevealManager {
   private advancePhase(): void {
     const phaseOrder = [
       RevealPhase.Victory,
-      RevealPhase.GoldCounter,
-      RevealPhase.GemCounter,
-      RevealPhase.ChestAppear,
-      RevealPhase.ItemReveal,
+      RevealPhase.Breakdown,
+      RevealPhase.GachaPrepare,
+      RevealPhase.GachaSpin,
       RevealPhase.Summary,
       RevealPhase.Complete,
     ];
 
     const currentIndex = phaseOrder.indexOf(this.state.phase);
-    const nextPhase = phaseOrder[currentIndex + 1];
+    let nextPhase = phaseOrder[currentIndex + 1];
+
+    // Skip gacha phases if no items
+    if (nextPhase === RevealPhase.GachaPrepare && this.rewards.items.length === 0) {
+      nextPhase = RevealPhase.Summary;
+    }
 
     if (nextPhase) {
       this.state.phase = nextPhase;
@@ -254,27 +287,40 @@ export class RewardRevealManager {
   private onPhaseEnter(phase: RevealPhase): void {
     switch (phase) {
       case RevealPhase.Victory:
-        // Flash effect
+        // Victory celebration - emit big particle burst
+        const centerPos: GridPosition = { row: 4, col: 4 };
+        this.particleManager.emitConfetti(centerPos, 30);
         break;
 
-      case RevealPhase.GoldCounter:
+      case RevealPhase.Breakdown:
+        // Reset breakdown flags
+        this.state.showBaseGold = false;
+        this.state.showWaveMultiplier = false;
+        this.state.showMedicalCosts = false;
+        this.state.showFinalGold = false;
         this.state.currentGoldDisplay = 0;
-        break;
-
-      case RevealPhase.GemCounter:
         this.state.currentGemDisplay = 0;
         break;
 
-      case RevealPhase.ChestAppear:
-        // Prepare chest animation
+      case RevealPhase.GachaPrepare:
+        // Gacha machine appears
+        const gachaPos: GridPosition = { row: 3, col: 3 };
+        this.particleManager.emitSparkles(gachaPos, 10);
         break;
 
-      case RevealPhase.ItemReveal:
+      case RevealPhase.GachaSpin:
+        // Reset item reveal state
         this.state.revealedItemIndex = -1;
+        this.state.spinningItemIndex = -1;
+        this.state.isSpinning = false;
         break;
 
       case RevealPhase.Summary:
-        // Show final totals
+        // Ensure all values are at final amounts
+        this.state.currentGoldDisplay = this.rewards.goldEarned;
+        this.state.currentGemDisplay = this.rewards.gemsEarned;
+        this.state.revealedItemIndex = this.rewards.items.length > 0 ? this.rewards.items.length - 1 : -1;
+        this.state.isSpinning = false;
         break;
     }
   }
@@ -286,137 +332,143 @@ export class RewardRevealManager {
   private updateVictoryPhase(elapsed: number): void {
     const duration = this.PHASE_DURATIONS[RevealPhase.Victory];
 
+    // Continuous sparkle emission during victory
+    if (elapsed % 100 < 16) { // Roughly every 100ms
+      const randomRow = Math.floor(Math.random() * 8);
+      const randomCol = Math.floor(Math.random() * 8);
+      this.particleManager.emitSparkles({ row: randomRow, col: randomCol }, 2);
+    }
+
     if (elapsed >= duration) {
       this.advancePhase();
     }
   }
 
-  private updateGoldCounterPhase(elapsed: number): void {
-    const duration = this.PHASE_DURATIONS[RevealPhase.GoldCounter];
-    const progress = Math.min(elapsed / duration, 1.0);
+  private updateBreakdownPhase(elapsed: number): void {
+    const duration = this.PHASE_DURATIONS[RevealPhase.Breakdown];
 
-    // Tick up gold counter
-    this.state.currentGoldDisplay = Math.floor(this.rewards.goldEarned * progress);
-
-    // Emit coin particles at start
-    if (elapsed < 200 && elapsed > 0) {
-      // Particles emitted in first 200ms
-      const centerPos: GridPosition = { row: 4, col: 6 };
-      this.particleManager.emitCoinDrop(centerPos, 5);
+    // Staggered reveal of breakdown components
+    if (elapsed >= 300 && !this.state.showBaseGold) {
+      this.state.showBaseGold = true;
+      // Emit coin particles
+      const pos: GridPosition = { row: 2, col: 1 };
+      this.particleManager.emitCoinDrop(pos, 5);
     }
 
-    // Lock-in effect at 90% progress
-    if (progress >= 0.9 && this.state.currentGoldDisplay < this.rewards.goldEarned) {
+    if (elapsed >= 900 && !this.state.showWaveMultiplier) {
+      this.state.showWaveMultiplier = true;
+      // Emit sparkles
+      const pos: GridPosition = { row: 3, col: 1 };
+      this.particleManager.emitSparkles(pos, 8);
+    }
+
+    if (elapsed >= 1500 && !this.state.showMedicalCosts && this.rewards.breakdown?.casualties && this.rewards.breakdown.casualties > 0) {
+      this.state.showMedicalCosts = true;
+      // Emit warning particles
+      const pos: GridPosition = { row: 4, col: 1 };
+      this.particleManager.emitSparkles(pos, 5);
+    }
+
+    if (elapsed >= 2000 && !this.state.showFinalGold) {
+      this.state.showFinalGold = true;
+      // Animate final gold counter
+      const pos: GridPosition = { row: 5, col: 2 };
+      this.particleManager.emitConfetti(pos, 15);
+    }
+
+    // Animate final gold counter when it appears
+    if (this.state.showFinalGold) {
+      const finalGoldProgress = Math.min((elapsed - 2000) / 500, 1.0);
+      const easeProgress = 1 - Math.pow(1 - finalGoldProgress, 3);
+      this.state.currentGoldDisplay = Math.floor(this.rewards.goldEarned * easeProgress);
+    }
+
+    // Animate gems (parallel with breakdown)
+    if (this.rewards.gemsEarned > 0 && elapsed > 500) {
+      const gemProgress = Math.min((elapsed - 500) / 1500, 1.0);
+      const gemEaseProgress = 1 - Math.pow(1 - gemProgress, 3);
+      this.state.currentGemDisplay = Math.floor(this.rewards.gemsEarned * gemEaseProgress);
+
+      // Emit gem particles once
+      if (elapsed >= 500 && elapsed < 700) {
+        const gemPos: GridPosition = { row: 2, col: 6 };
+        this.particleManager.emitGemSpiral(gemPos, 5);
+      }
+    }
+
+    if (elapsed >= duration) {
       this.state.currentGoldDisplay = this.rewards.goldEarned;
-      const centerPos: GridPosition = { row: 4, col: 6 };
-      this.particleManager.emitSparkles(centerPos, 8);
-    }
-
-    if (elapsed >= duration) {
-      this.state.currentGoldDisplay = this.rewards.goldEarned;
-      this.advancePhase();
-    }
-  }
-
-  private updateGemCounterPhase(elapsed: number): void {
-    const duration = this.PHASE_DURATIONS[RevealPhase.GemCounter];
-    const progress = Math.min(elapsed / duration, 1.0);
-
-    // Tick up gem counter
-    this.state.currentGemDisplay = Math.floor(this.rewards.gemsEarned * progress);
-
-    // Emit gem spiral at start
-    if (elapsed < 200 && elapsed > 0) {
-      const centerPos: GridPosition = { row: 4, col: 8 };
-      this.particleManager.emitGemSpiral(centerPos, 8);
-    }
-
-    // Lock-in effect at 90% progress
-    if (progress >= 0.9 && this.state.currentGemDisplay < this.rewards.gemsEarned) {
-      this.state.currentGemDisplay = this.rewards.gemsEarned;
-      const centerPos: GridPosition = { row: 4, col: 8 };
-      this.particleManager.emitSparkles(centerPos, 8);
-    }
-
-    if (elapsed >= duration) {
       this.state.currentGemDisplay = this.rewards.gemsEarned;
       this.advancePhase();
     }
   }
 
-  private updateChestAppearPhase(elapsed: number): void {
-    const duration = this.PHASE_DURATIONS[RevealPhase.ChestAppear];
-
-    // Chest drop and bounce animation handled by layout
-    // We just emit particles when chest appears
-
-    if (elapsed < 100 && elapsed > 0) {
-      const chestPos: GridPosition = { row: 6, col: 6 };
-      this.particleManager.emitSparkles(chestPos, 5);
-    }
+  private updateGachaPreparePhase(elapsed: number): void {
+    const duration = this.PHASE_DURATIONS[RevealPhase.GachaPrepare];
 
     if (elapsed >= duration) {
       this.advancePhase();
     }
   }
 
-  private updateItemRevealPhase(elapsed: number): void {
-    // If no items, skip immediately to summary
+  private updateGachaSpinPhase(elapsed: number): void {
+    // If no items, advance immediately
     if (this.rewards.items.length === 0) {
       this.advancePhase();
       return;
     }
 
-    // Check if we need to start revealing the next item
-    if (this.state.revealedItemIndex < this.rewards.items.length - 1) {
-      const nextItemIndex = this.state.revealedItemIndex + 1;
-      const nextItem = this.rewards.items[nextItemIndex];
-      const itemDuration = this.ITEM_REVEAL_DURATIONS[nextItem.rarity];
+    // Calculate which item should be spinning/revealed
+    const itemIndex = Math.floor(elapsed / (this.GACHA_SPIN_TIME + this.GACHA_REVEAL_DELAY));
 
-      // Check if enough time has passed for current item
-      if (this.state.revealedItemIndex === -1 || elapsed >= itemDuration) {
-        // Advance to next item
-        this.state.revealedItemIndex = nextItemIndex;
-        this.state.phaseStartTime = Date.now(); // Reset timer for this item
+    // Check if we're done with all items
+    if (itemIndex >= this.rewards.items.length) {
+      // All items revealed - advance to summary
+      this.state.isSpinning = false;
+      this.state.revealedItemIndex = this.rewards.items.length - 1;
+      this.advancePhase();
+      return;
+    }
 
-        // Emit particles based on rarity
-        this.emitItemRevealParticles(nextItem, nextItemIndex);
+    const itemElapsed = elapsed - (itemIndex * (this.GACHA_SPIN_TIME + this.GACHA_REVEAL_DELAY));
+
+    // Update spinning state
+    if (itemElapsed < this.GACHA_SPIN_TIME) {
+      // Currently spinning this item
+      if (this.state.spinningItemIndex !== itemIndex) {
+        this.state.spinningItemIndex = itemIndex;
+        this.state.isSpinning = true;
       }
     } else {
-      // All items revealed - get the last revealed item
-      const lastItem = this.rewards.items[this.state.revealedItemIndex];
-      if (lastItem) {
-        const itemDuration = this.ITEM_REVEAL_DURATIONS[lastItem.rarity];
+      // Item has been revealed
+      if (this.state.revealedItemIndex < itemIndex) {
+        this.state.revealedItemIndex = itemIndex;
+        this.state.isSpinning = false;
 
-        if (elapsed >= itemDuration) {
-          this.advancePhase();
+        // Emit particles when item is revealed
+        const item = this.rewards.items[itemIndex];
+        const itemCol = Math.min(itemIndex, 7);
+        const itemPos: GridPosition = { row: 5, col: itemCol };
+
+        switch (item.rarity) {
+          case Rarity.Mythic:
+            // Mythic items get the most impressive particle effect
+            this.particleManager.emitRainbow(itemPos, 50);
+            break;
+          case Rarity.Legendary:
+            this.particleManager.emitRainbow(itemPos, 30);
+            break;
+          case Rarity.Rare:
+            this.particleManager.emitConfetti(itemPos, 15);
+            break;
+          case Rarity.Uncommon:
+            this.particleManager.emitSparkles(itemPos, 10);
+            break;
+          default:
+            this.particleManager.emitSparkles(itemPos, 5);
+            break;
         }
-      } else {
-        // Safety check - if lastItem is undefined, advance immediately
-        this.advancePhase();
       }
-    }
-  }
-
-  private emitItemRevealParticles(item: RewardItem, index: number): void {
-    const itemPos: GridPosition = { row: 8, col: index };
-
-    switch (item.rarity) {
-      case Rarity.Common:
-        this.particleManager.emitSparkles(itemPos, 3);
-        break;
-      case Rarity.Uncommon:
-        this.particleManager.emitSparkles(itemPos, 5);
-        break;
-      case Rarity.Rare:
-        this.particleManager.emitSparkles(itemPos, 8);
-        break;
-      case Rarity.Epic:
-        this.particleManager.emitConfetti(itemPos, 12);
-        break;
-      case Rarity.Legendary:
-        this.particleManager.emitRainbow(itemPos, 30);
-        break;
     }
   }
 }

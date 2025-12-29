@@ -70,6 +70,7 @@ export interface GridButton extends BaseGridOccupant {
   onClick: () => void;
   variant?: 'primary' | 'secondary' | 'danger';
   disabled?: boolean;
+  description?: string; // Optional description to show in hover info
   onDrop?: (heroId: string) => void; // For drag-and-drop support
   onMouseEnter?: () => void; // For hover effects
   onMouseLeave?: () => void; // For hover effects

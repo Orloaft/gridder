@@ -44,6 +44,7 @@ export function createShopLayout(
     label: 'Back',
     icon: generateButtonIcon('back'),
     variant: 'secondary',
+    description: 'Return to the main menu without purchasing anything',
     onClick: () => navigate(ScreenType.MainMenu),
     animationDelay: 0.1,
   });
@@ -74,6 +75,7 @@ export function createShopLayout(
     label: 'Refresh',
     icon: '🔄',
     variant: 'secondary',
+    description: 'Refresh the shop inventory to see new items and heroes for hire (costs gold)',
     onClick: onRefreshShop,
     animationDelay: 0.35,
   });

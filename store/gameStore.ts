@@ -17,6 +17,9 @@ import { createHeroInstance, createEnemyInstance, getHeroGemCost, LEARNABLE_ABIL
 import { getStageById, getNextUnlockedStage } from '@/data/stages';
 import { getLocationByStageId } from '@/data/locations';
 import { BattleSimulator, BattleState } from '@/systems/BattleSimulator';
+import { DeterministicBattleSimulator, BattleAction } from '@/systems/DeterministicBattleSimulator';
+import { DeterministicBattleSimulatorV2 } from '@/systems/DeterministicBattleSimulatorV2';
+import { BattleAnimationPlayer } from '@/systems/BattleAnimationPlayer';
 import { audioManager } from '@/utils/audioManager';
 import { getRandomItems, ITEM_TEMPLATES } from '@/data/items';
 import { HERO_TEMPLATES } from '@/data/units';
@@ -59,11 +62,22 @@ interface GameStore extends GameState {
   advanceBattleEvent: () => void;
   retreatFromBattle: () => void;
 
+  // Deterministic Battle System
+  useDeterministicBattle: boolean; // Flag to enable deterministic battle system V2
+
   // Reward Reveal state
   pendingRewards: {
     goldEarned: number;
     gemsEarned: number;
-    items: Array<{ id: string; name: string; rarity: string; icon: string; value: number }>;
+    items: Array<{ id: string; name: string; rarity: Rarity; icon: string; value: number }>;
+    breakdown?: {
+      baseGold: number;
+      waveMultiplier: number;
+      wavesCompleted: number;
+      medicalCosts: number;
+      casualties: number;
+      finalGold: number;
+    };
   } | null;
   setPendingRewards: (rewards: any) => void;
 
@@ -92,6 +106,7 @@ interface GameStore extends GameState {
   equipItem: (itemInstanceId: string, heroInstanceId: string) => boolean;
   unequipItem: (itemInstanceId: string) => void;
   recalculateHeroStats: (heroInstanceId: string) => void;
+  sellItem: (itemInstanceId: string) => boolean;
 
   // Team selection
   setSelectedTeam: (heroInstanceIds: string[]) => void;
@@ -100,6 +115,7 @@ interface GameStore extends GameState {
 
   // Campaign progression
   completeStage: (stageId: number) => void;
+  completeLocation: (locationId: string) => void;
   unlockFeature: (featureName: string) => void;
 
   // Shop management
@@ -119,7 +135,7 @@ interface GameStore extends GameState {
 
 const initialPlayerData: PlayerData = {
   gold: 500,
-  gems: 0, // Start with 0 gems - only get gems from bosses
+  gems: 50, // Starting gem allowance for 1-2 hero unlocks
   level: 1,
   experience: 0,
   maxExperience: 100,
@@ -129,11 +145,15 @@ const initialCampaignProgress: CampaignProgress = {
   currentStage: 1,
   maxStageReached: 1,
   stagesCompleted: new Set<number>(),
+  locationsCompleted: new Set<string>(),
 };
 
-// Create starter heroes - only 1 Quester to start
+// Create starter heroes - IMPROVED EARLY GAME WITH 3 HEROES
+// Provides basic team composition: Tank, DPS, Support
 const starterHeroes = [
-  createHeroInstance('quester', 1),
+  createHeroInstance('quester', 1),      // Versatile fighter with learnable abilities
+  createHeroInstance('blood_knight', 1), // Tank with lifesteal
+  createHeroInstance('witch_hunter', 1), // Ranged DPS
 ];
 
 const initialState = {
@@ -142,7 +162,7 @@ const initialState = {
   inventory: [] as ItemInstance[],
   campaign: initialCampaignProgress,
   unlockedFeatures: new Set<string>(['mainMenu', 'locationMap']),
-  unlockedHeroIds: new Set<string>(['quester']), // Quester is unlocked by default
+  unlockedHeroIds: new Set<string>(['quester', 'blood_knight', 'witch_hunter']), // Starter heroes unlocked
   currentScreen: ScreenType.MainMenu,
   selectedTeam: [] as string[],
   gridOccupants: [] as AnyGridOccupant[],
@@ -154,6 +174,7 @@ const initialState = {
   currentBattle: null as BattleState | null,
   battleEventIndex: 0,
   battleSpeed: 1,
+  useDeterministicBattle: true, // Set to true to enable deterministic battle system V2
   pendingRewards: null,
   shopItems: [] as Item[],
   shopHeroes: [] as Hero[],
@@ -260,14 +281,21 @@ export const useGameStore = create<GameStore>()(
           const stage = getStageById(state.selectedStageId);
           if (stage) {
             // Clean up orphaned hero IDs (heroes that are in preBattleTeam but not in roster)
-            const validTeam = state.preBattleTeam.filter(heroId => {
+            let validTeam = state.preBattleTeam.filter(heroId => {
               if (!heroId || heroId === '') return false;
               return state.roster.some(h => h.instanceId === heroId);
             });
 
-            // Update team if orphaned IDs were removed
-            if (validTeam.length !== state.preBattleTeam.filter(id => id && id !== '').length) {
-              console.warn('[PreBattle] Cleaned up orphaned hero IDs from team');
+            // Trim team to stage's player slot limit
+            if (validTeam.length > stage.playerSlots) {
+              console.warn(`[PreBattle] Team has ${validTeam.length} heroes but stage allows only ${stage.playerSlots}. Trimming team.`);
+              validTeam = validTeam.slice(0, stage.playerSlots);
+            }
+
+            // Update team if it was modified
+            if (validTeam.length !== state.preBattleTeam.filter(id => id && id !== '').length ||
+                validTeam.length > stage.playerSlots) {
+              console.warn('[PreBattle] Adjusted team size for stage requirements');
               set({ preBattleTeam: validTeam });
             }
 
@@ -583,6 +611,39 @@ export const useGameStore = create<GameStore>()(
         return true;
       },
 
+      sellItem: (itemInstanceId: string) => {
+        const state = get();
+        const item = state.inventory.find(i => i.instanceId === itemInstanceId);
+
+        if (!item || item.equippedTo) {
+          // Can't sell equipped items
+          return false;
+        }
+
+        // Calculate sell price based on rarity
+        const sellPrices: Record<string, number> = {
+          common: 25,
+          uncommon: 50,
+          rare: 100,
+          epic: 200,
+          legendary: 400,
+          mythic: 800,
+        };
+
+        const sellPrice = sellPrices[item.rarity] || 25;
+
+        // Add gold and remove item
+        set((state) => ({
+          player: {
+            ...state.player,
+            gold: state.player.gold + sellPrice,
+          },
+          inventory: state.inventory.filter(i => i.instanceId !== itemInstanceId),
+        }));
+
+        return true;
+      },
+
       unequipItem: (itemInstanceId: string) => {
         const state = get();
         const item = state.inventory.find(i => i.instanceId === itemInstanceId);
@@ -722,6 +783,19 @@ export const useGameStore = create<GameStore>()(
           };
         }),
 
+      completeLocation: (locationId: string) =>
+        set((state) => {
+          const newLocationsCompleted = new Set(state.campaign.locationsCompleted);
+          newLocationsCompleted.add(locationId);
+
+          return {
+            campaign: {
+              ...state.campaign,
+              locationsCompleted: newLocationsCompleted,
+            },
+          };
+        }),
+
       unlockFeature: (featureName: string) =>
         set((state) => {
           const newUnlockedFeatures = new Set(state.unlockedFeatures);
@@ -738,7 +812,18 @@ export const useGameStore = create<GameStore>()(
       // Pre-Battle team management
       setPreBattleTeam: (heroIds: string[]) => {
         const state = get();
-        set({ preBattleTeam: heroIds });
+
+        // Validate team size against stage limit if we have a selected stage
+        let validatedTeam = heroIds;
+        if (state.selectedStageId) {
+          const stage = getStageById(state.selectedStageId);
+          if (stage && heroIds.length > stage.playerSlots) {
+            console.warn(`[setPreBattleTeam] Team size ${heroIds.length} exceeds stage limit ${stage.playerSlots}. Trimming.`);
+            validatedTeam = heroIds.slice(0, stage.playerSlots);
+          }
+        }
+
+        set({ preBattleTeam: validatedTeam });
 
         // Regenerate Pre-Battle layout with new team
         if (state.currentScreen === ScreenType.PreBattle && state.selectedStageId) {
@@ -868,12 +953,18 @@ export const useGameStore = create<GameStore>()(
           state.setGridSize(8, 8);
         }
 
-        // Get selected heroes
-        const heroes = state.preBattleTeam
+        // Get selected heroes - limit to stage's playerSlots
+        const selectedHeroIds = state.preBattleTeam.slice(0, stage.playerSlots);
+        const heroes = selectedHeroIds
           .map((heroId) => state.roster.find((h) => h.instanceId === heroId))
           .filter((h) => h !== undefined) as Hero[];
 
         if (heroes.length === 0) return;
+
+        // Warn if team was trimmed
+        if (state.preBattleTeam.length > stage.playerSlots) {
+          console.warn(`[startBattle] Team trimmed from ${state.preBattleTeam.length} to ${stage.playerSlots} heroes for this stage`);
+        }
 
         // Create enemies from stage with scaling based on stage number
         // Handle both single wave (string[]) and multi-wave (string[][]) formats
@@ -888,8 +979,65 @@ export const useGameStore = create<GameStore>()(
             );
 
         // Run battle simulation to get all events
-        const simulator = new BattleSimulator(heroes, enemies);
-        const battleState = simulator.simulate();
+        // Use deterministic V2 simulator if enabled, otherwise use original
+        let battleState: BattleState;
+        if (state.useDeterministicBattle) {
+          console.log('[startBattle] Using Deterministic Battle Simulator V2');
+          const simulator = new DeterministicBattleSimulatorV2(heroes, enemies);
+          battleState = simulator.simulate();
+
+          // CRITICAL: Force cleanup any invalid positions that somehow got through
+          const gridRows = state.gridRows || 8;
+          const gridCols = state.gridCols || 8;
+
+          // Clean heroes
+          battleState.heroes = battleState.heroes.map(hero => {
+            if (hero.position.row >= gridRows || hero.position.col >= gridCols ||
+                hero.position.row < 0 || hero.position.col < 0) {
+              console.warn(`[startBattle] Forcing hero ${hero.name} from invalid position (${hero.position.row},${hero.position.col}) to (0,0)`);
+              return { ...hero, position: { row: 0, col: 0 } };
+            }
+            return hero;
+          });
+
+          // Clean enemies
+          battleState.enemies = battleState.enemies.map(enemy => {
+            if (enemy.position.row >= gridRows || enemy.position.col >= gridCols ||
+                enemy.position.row < 0 || enemy.position.col < 0) {
+              console.warn(`[startBattle] Forcing enemy ${enemy.name} from invalid position (${enemy.position.row},${enemy.position.col}) to (0,6)`);
+              return { ...enemy, position: { row: 0, col: 6 } };
+            }
+            return enemy;
+          });
+        } else {
+          console.log('[startBattle] Using Original Battle Simulator');
+          const simulator = new BattleSimulator(heroes, enemies);
+          battleState = simulator.simulate();
+
+          // Also clean up invalid positions from the original simulator
+          const gridRows = state.gridRows || 8;
+          const gridCols = state.gridCols || 8;
+
+          // Clean heroes
+          battleState.heroes = battleState.heroes.map(hero => {
+            if (hero.position.row >= gridRows || hero.position.col >= gridCols ||
+                hero.position.row < 0 || hero.position.col < 0) {
+              console.warn(`[startBattle Original] Forcing hero ${hero.name} from invalid position (${hero.position.row},${hero.position.col}) to (0,0)`);
+              return { ...hero, position: { row: 0, col: 0 } };
+            }
+            return hero;
+          });
+
+          // Clean enemies
+          battleState.enemies = battleState.enemies.map(enemy => {
+            if (enemy.position.row >= gridRows || enemy.position.col >= gridCols ||
+                enemy.position.row < 0 || enemy.position.col < 0) {
+              console.warn(`[startBattle Original] Forcing enemy ${enemy.name} from invalid position (${enemy.position.row},${enemy.position.col}) to (0,6)`);
+              return { ...enemy, position: { row: 0, col: 6 } };
+            }
+            return enemy;
+          });
+        }
 
         console.log('Battle started with events:', battleState.events.length);
         console.log('Initial hero positions:', battleState.heroes.map(h => h.position));
@@ -897,12 +1045,12 @@ export const useGameStore = create<GameStore>()(
         console.log('Current wave:', battleState.currentWave);
         console.log('Total waves:', battleState.totalWaves);
 
-        // IMPORTANT: Reset battle state to initial state before any events
-        // The simulator mutates state during simulate(), so we need to restore them
+        // IMPORTANT: Reset positions to match what the V2 simulator used
+        // The V2 simulator generates events based on these initial positions
         battleState.heroes.forEach((hero, index) => {
-          // Spread heroes across multiple rows if needed
-          const row = 3 + Math.floor(index / 2); // Row 3-5
-          const col = index % 2; // Col 0-1
+          // Heroes start at rows 2-7, columns 0-1
+          const row = Math.min(2 + Math.floor(index / 2), 7);
+          const col = index % 2;
           hero.position = { row, col };
           hero.isAlive = true;
           hero.stats.hp = hero.stats.maxHp;
@@ -910,18 +1058,19 @@ export const useGameStore = create<GameStore>()(
         });
 
         // Reset wave 1 enemies and wave 2+ enemies
-        // Wave 2+ enemies should be reset to off-screen position (col: 8)
-        battleState.enemies.forEach((enemy, globalIndex) => {
+        battleState.enemies.forEach((enemy, index) => {
           if (enemy.wave === 1) {
-            // Wave 1 enemies start on-screen
-            const wave1Index = battleState.enemies.filter(e => e.wave === 1).indexOf(enemy);
-            const row = 3 + Math.floor(wave1Index / 2); // Row 3-5
-            const col = 7 - (wave1Index % 2); // Col 6-7
+            // Wave 1 enemies start at rows 2-7, columns 6-7
+            const wave1Enemies = battleState.enemies.filter(e => e.wave === 1);
+            const wave1Index = wave1Enemies.indexOf(enemy);
+            const row = Math.min(2 + Math.floor(wave1Index / 2), 7);
+            const col = 7 - (wave1Index % 2);
             enemy.position = { row, col };
           } else {
-            // Wave 2+ enemies start off-screen (will slide in when their wave spawns)
-            const waveIndex = battleState.enemies.filter(e => e.wave === enemy.wave).indexOf(enemy);
-            const row = 3 + Math.floor(waveIndex / 2); // Row 3-5
+            // Later wave enemies start off-screen
+            const waveEnemies = battleState.enemies.filter(e => e.wave === enemy.wave);
+            const waveIndex = waveEnemies.indexOf(enemy);
+            const row = Math.min(2 + Math.floor(waveIndex / 2), 7);
             const col = 8; // Off-screen to the right
             enemy.position = { row, col };
           }
@@ -978,6 +1127,28 @@ export const useGameStore = create<GameStore>()(
                 }
               });
             }
+          } else if (event.type === 'waveTransition') {
+            // Update hero positions using the specific transitions from the event
+            if (event.data.heroTransitions) {
+              // Use the pre-calculated positions that avoid collisions
+              event.data.heroTransitions.forEach((transition: any) => {
+                const hero = state.currentBattle.heroes.find(h => h.id === transition.unitId);
+                if (hero) {
+                  console.log(`[WaveTransition] Updated ${hero.name} position from (${transition.from.row},${transition.from.col}) to (${transition.to.row},${transition.to.col})`);
+                  hero.position = transition.to;
+                }
+              });
+            } else {
+              // Fallback for older events without transition data
+              const scrollDistance = event.data.scrollDistance || 2;
+              state.currentBattle.heroes.forEach(hero => {
+                if (hero.isAlive) {
+                  const oldCol = hero.position.col;
+                  hero.position.col = Math.max(0, hero.position.col - scrollDistance - 1);
+                  console.log(`[WaveTransition] Updated ${hero.name} position from col ${oldCol} to ${hero.position.col}`);
+                }
+              });
+            }
           } else if (event.type === 'waveStart') {
             // Update current wave number when new wave spawns
             state.currentBattle.currentWave = event.data.waveNumber;
@@ -999,7 +1170,10 @@ export const useGameStore = create<GameStore>()(
             const unit = [...state.currentBattle.heroes, ...state.currentBattle.enemies]
               .find(u => u.id === event.data.unitId);
             if (unit) {
+              // Update the logical position immediately
+              // The animation system will handle keeping the visual position correct
               unit.position = event.data.to;
+              console.log(`[advanceBattleEvent] Updated position for ${event.data.unitId} from (${event.data.from.row},${event.data.from.col}) to (${event.data.to.row},${event.data.to.col})`);
             }
           } else if (event.type === 'damage') {
             const unit = [...state.currentBattle.heroes, ...state.currentBattle.enemies]
@@ -1048,15 +1222,24 @@ export const useGameStore = create<GameStore>()(
             if (stage) {
               console.log('Completing stage:', state.selectedStageId);
 
-              // Calculate medical costs for fainted heroes (100-150g per fainted hero)
+              // Calculate medical costs for fainted heroes - REDUCED FOR BALANCE
+              // Early stages: 15-25g per hero
+              // Mid stages: 20-35g per hero
+              // Late stages: 30-50g per hero
               let medicalCosts = 0;
               let faintedCount = 0;
+
+              // Scale medical costs based on stage progression
+              const stageProgress = Math.min(state.selectedStageId / 128, 1);
+              const minCost = Math.floor(15 + stageProgress * 15); // 15-30g
+              const maxCost = Math.floor(25 + stageProgress * 25); // 25-50g
+
               state.preBattleTeam.forEach(heroId => {
                 const battleHero = state.currentBattle!.heroes.find(h => h.instanceId === heroId);
                 if (battleHero && !battleHero.isAlive) {
                   faintedCount++;
-                  // Random cost between 100-150g per fainted hero
-                  const costPerHero = Math.floor(Math.random() * 51) + 100; // 100-150
+                  // Random cost within scaled range
+                  const costPerHero = Math.floor(Math.random() * (maxCost - minCost + 1)) + minCost;
                   medicalCosts += costPerHero;
                 }
               });
@@ -1078,7 +1261,9 @@ export const useGameStore = create<GameStore>()(
               console.log(`Gold reward: ${stage.rewards.gold}g × ${goldMultiplier}x = ${baseGold}g - Medical costs: ${medicalCosts}g = ${netGold}g`);
 
               // Calculate gems for boss stages
+              console.log(`[Victory] Stage rewards:`, stage.rewards);
               const gemsEarned = (stage.rewards.gems && stage.rewards.gems > 0) ? stage.rewards.gems : 0;
+              console.log(`[Victory] Gems to award: ${gemsEarned} (from stage.rewards.gems: ${stage.rewards.gems})`);
               if (gemsEarned > 0) {
                 console.log(`Boss defeated! Will award ${gemsEarned} gems!`);
               }
@@ -1118,12 +1303,22 @@ export const useGameStore = create<GameStore>()(
                 state.awardHeroExperience(heroId, xpPerHero);
               });
 
-              // Apply durability loss to equipped items of heroes who died (fainted) during battle
+              // Update hero HP after battle and apply durability loss to equipped items of heroes who died (fainted)
               state.preBattleTeam.forEach(heroId => {
                 const battleHero = state.currentBattle!.heroes.find(h => h.instanceId === heroId);
+                const hero = state.roster.find(h => h.instanceId === heroId);
+
+                if (battleHero && hero) {
+                  // Update hero's current HP to match battle result
+                  const updatedStats = {
+                    ...hero.currentStats,
+                    hp: battleHero.isAlive ? battleHero.stats.hp : 0
+                  };
+                  state.updateHero(heroId, { currentStats: updatedStats });
+                }
+
                 if (battleHero && !battleHero.isAlive) {
                   // Hero died during battle - reduce item durability
-                  const hero = state.roster.find(h => h.instanceId === heroId);
                   if (hero && hero.equippedItem) {
                     const item = state.inventory.find(i => i.instanceId === hero.equippedItem);
                     if (item && item.durability !== undefined) {
@@ -1149,7 +1344,14 @@ export const useGameStore = create<GameStore>()(
                 }
               });
 
+              // Complete the stage and potentially the location
               state.completeStage(state.selectedStageId);
+
+              // Check if this was a location stage and mark location as complete
+              const location = getLocationByStageId(state.selectedStageId);
+              if (location && location.id) {
+                state.completeLocation(location.id);
+              }
 
               // Check if any hero needs to select an ability
               const freshState = get();
@@ -1159,12 +1361,22 @@ export const useGameStore = create<GameStore>()(
                 return;
               }
 
-              // Create pending rewards object
+              // Create pending rewards object with breakdown
               const pendingRewards = {
                 goldEarned: netGold,
                 gemsEarned: gemsEarned,
                 items: droppedItems,
+                breakdown: {
+                  baseGold: stage.rewards.gold,
+                  waveMultiplier: goldMultiplier,
+                  wavesCompleted: maxWaveReached,
+                  medicalCosts: medicalCosts,
+                  casualties: faintedCount,
+                  finalGold: netGold,
+                },
               };
+
+              console.log('🎰 NEW GACHA REWARD CREATED:', { gold: netGold, gems: gemsEarned, items: droppedItems.length, hasBreakdown: true });
 
               // Set pending rewards
               state.setPendingRewards(pendingRewards);
@@ -1259,20 +1471,29 @@ export const useGameStore = create<GameStore>()(
                                 maxWaveReached <= 9 ? 2.0 :
                                 4.0; // Wave 10+
 
-        // Award partial gold (50% of stage rewards) with multiplier, minus medical costs
+        // Calculate partial gold (50% of stage rewards) with multiplier, minus medical costs
         const baseGold = Math.floor((stage.rewards.gold * 0.5) * goldMultiplier);
         const netGold = Math.max(0, baseGold - medicalCosts);
-        state.addGold(netGold);
         console.log(`Retreat gold reward: ${stage.rewards.gold * 0.5}g × ${goldMultiplier}x = ${baseGold}g - Medical costs: ${medicalCosts}g = ${netGold}g`);
 
         // NO XP or item rewards on retreat (penalty for retreating)
         console.log('No XP or item rewards awarded (retreat penalty)');
 
-        // Apply durability loss to equipped items of heroes who died during battle
+        // Update hero HP after battle and apply durability loss to equipped items of heroes who died
         state.preBattleTeam.forEach(heroId => {
           const battleHero = state.currentBattle!.heroes.find(h => h.instanceId === heroId);
+          const hero = state.roster.find(h => h.instanceId === heroId);
+
+          if (battleHero && hero) {
+            // Update hero's current HP to match battle result
+            const updatedStats = {
+              ...hero.currentStats,
+              hp: battleHero.isAlive ? battleHero.stats.hp : 0
+            };
+            state.updateHero(heroId, { currentStats: updatedStats });
+          }
+
           if (battleHero && !battleHero.isAlive) {
-            const hero = state.roster.find(h => h.instanceId === heroId);
             if (hero && hero.equippedItem) {
               const item = state.inventory.find(i => i.instanceId === hero.equippedItem);
               if (item && item.durability !== undefined) {
@@ -1296,6 +1517,26 @@ export const useGameStore = create<GameStore>()(
           }
         });
 
+        // Create pending rewards object for reward reveal screen with breakdown
+        const pendingRewards = {
+          goldEarned: netGold,
+          gemsEarned: 0, // No gems on retreat
+          items: [], // No items on retreat
+          breakdown: {
+            baseGold: Math.floor(stage.rewards.gold * 0.5), // 50% for retreat
+            waveMultiplier: goldMultiplier,
+            wavesCompleted: maxWaveReached,
+            medicalCosts: medicalCosts,
+            casualties: faintedCount,
+            finalGold: netGold,
+          },
+        };
+
+        console.log('🎰 NEW GACHA REWARD CREATED (RETREAT):', { gold: netGold, gems: 0, items: 0, hasBreakdown: true });
+
+        // Set pending rewards
+        state.setPendingRewards(pendingRewards);
+
         // Clear battle state
         set({
           currentBattle: null,
@@ -1303,20 +1544,19 @@ export const useGameStore = create<GameStore>()(
           battleSpeed: 1,
         });
 
+        // Reset grid size to default (8x8) for reward reveal screen
+        state.setGridSize(8, 8);
+
         // Switch back to main menu music
         audioManager.playMusic('/Goblins_Den_(Regular).wav', true, 0.5);
 
-        // Clear selected stage and location
-        set({
-          selectedStageId: null,
-          selectedLocationId: null,
-        });
+        console.log('Retreat! Navigating to reward reveal screen with rewards:', pendingRewards);
 
-        // Navigate back to location map
+        // Navigate to reward reveal screen
         if ((window as any).__gridNavigate) {
-          (window as any).__gridNavigate(ScreenType.LocationMap);
+          (window as any).__gridNavigate(ScreenType.RewardReveal);
         } else {
-          state.navigate(ScreenType.LocationMap);
+          state.navigate(ScreenType.RewardReveal);
         }
       },
 
@@ -1324,7 +1564,7 @@ export const useGameStore = create<GameStore>()(
       refreshShop: () => {
         // Get random items (6-10 items)
         const itemCount = Math.floor(Math.random() * 5) + 6;
-        const newItems = getRandomItems(itemCount, Rarity.Epic);
+        const newItems = getRandomItems(itemCount, Rarity.Mythic);
 
         // Get random heroes (2-4 heroes)
         const heroCount = Math.floor(Math.random() * 3) + 2;

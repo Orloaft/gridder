@@ -46,10 +46,10 @@ export function generateLoot(config: LootConfig): string[] {
         return rarityWeights.uncommon;
       case Rarity.Rare:
         return rarityWeights.rare;
-      case Rarity.Epic:
-        return rarityWeights.epic;
       case Rarity.Legendary:
         return rarityWeights.legendary;
+      case Rarity.Mythic:
+        return rarityWeights.mythic;
       default:
         return 1;
     }
@@ -72,67 +72,79 @@ export function generateLoot(config: LootConfig): string[] {
 
 /**
  * Get rarity weights based on wave number (escalating drop tables)
+ * Matches design doc specifications with Mythic tier
  */
 function getWaveBasedRarityWeights(waveNumber: number): {
   common: number;
   uncommon: number;
   rare: number;
-  epic: number;
   legendary: number;
+  mythic: number;
 } {
-  // Waves 1-3: 80% common, 15% uncommon, 5% rare, 0% epic, 0% legendary
+  // Waves 1-3: Early game - mostly common items
+  // 70% common, 20% uncommon, 8% rare, 2% legendary, 0% mythic
   if (waveNumber <= 3) {
-    return { common: 80, uncommon: 15, rare: 5, epic: 0, legendary: 0 };
+    return { common: 700, uncommon: 200, rare: 80, legendary: 20, mythic: 0 };
   }
 
-  // Waves 4-6: 60% common, 25% uncommon, 12% rare, 3% epic, 0% legendary
+  // Waves 4-6: Mid-early game - uncommon becomes more common
+  // 50% common, 30% uncommon, 15% rare, 5% legendary, 0% mythic
   if (waveNumber <= 6) {
-    return { common: 60, uncommon: 25, rare: 12, epic: 3, legendary: 0 };
+    return { common: 500, uncommon: 300, rare: 150, legendary: 50, mythic: 0 };
   }
 
-  // Waves 7-9: 40% common, 30% uncommon, 20% rare, 9% epic, 1% legendary
-  if (waveNumber <= 9) {
-    return { common: 40, uncommon: 30, rare: 20, epic: 9, legendary: 1 };
+  // Waves 7-10: Mid game - rare items appear more often
+  // 35% common, 30% uncommon, 25% rare, 9.5% legendary, 0.5% mythic
+  if (waveNumber <= 10) {
+    return { common: 350, uncommon: 300, rare: 250, legendary: 95, mythic: 5 };
   }
 
-  // Wave 10+: 25% common, 25% uncommon, 25% rare, 15% epic, 10% legendary
-  return { common: 25, uncommon: 25, rare: 25, epic: 15, legendary: 10 };
+  // Waves 11-15: Late game - legendary items more common
+  // 20% common, 25% uncommon, 30% rare, 20% legendary, 5% mythic
+  if (waveNumber <= 15) {
+    return { common: 200, uncommon: 250, rare: 300, legendary: 200, mythic: 50 };
+  }
+
+  // Wave 16+: Endgame - best drop rates
+  // 10% common, 20% uncommon, 30% rare, 30% legendary, 10% mythic
+  return { common: 100, uncommon: 200, rare: 300, legendary: 300, mythic: 100 };
 }
 
 /**
  * Get default loot config based on stage difficulty
+ * Updated for Mythic tier - only boss stages can drop Mythic items
  */
 export function getDefaultLootConfig(difficulty: 'tutorial' | 'easy' | 'medium' | 'hard' | 'boss'): LootConfig {
   switch (difficulty) {
     case 'tutorial':
       return {
-        itemDropChance: 0.15, // 15% chance
+        itemDropChance: 0.30, // 30% chance (increased from 15%)
         maxRarity: Rarity.Common,
       };
     case 'easy':
       return {
-        itemDropChance: 0.25, // 25% chance
+        itemDropChance: 0.45, // 45% chance (increased from 25%)
         maxRarity: Rarity.Uncommon,
       };
     case 'medium':
       return {
-        itemDropChance: 0.35, // 35% chance
+        itemDropChance: 0.60, // 60% chance (increased from 35%)
         maxRarity: Rarity.Rare,
       };
     case 'hard':
       return {
-        itemDropChance: 0.50, // 50% chance
-        maxRarity: Rarity.Epic,
+        itemDropChance: 0.75, // 75% chance (increased from 50%)
+        maxRarity: Rarity.Legendary,
       };
     case 'boss':
       return {
         itemDropChance: 1.0, // 100% chance (guaranteed)
-        maxRarity: Rarity.Legendary,
+        maxRarity: Rarity.Mythic, // Boss stages can drop Mythic items
         guaranteedDrop: true,
       };
     default:
       return {
-        itemDropChance: 0.25,
+        itemDropChance: 0.45,
         maxRarity: Rarity.Uncommon,
       };
   }
@@ -149,10 +161,10 @@ export function getRarityName(rarity: Rarity): string {
       return 'Uncommon';
     case Rarity.Rare:
       return 'Rare';
-    case Rarity.Epic:
-      return 'Epic';
     case Rarity.Legendary:
       return 'Legendary';
+    case Rarity.Mythic:
+      return 'Mythic';
     default:
       return 'Unknown';
   }
@@ -169,10 +181,10 @@ export function getRarityColor(rarity: Rarity): string {
       return '#10B981'; // Green
     case Rarity.Rare:
       return '#3B82F6'; // Blue
-    case Rarity.Epic:
-      return '#A855F7'; // Purple
     case Rarity.Legendary:
       return '#F59E0B'; // Gold
+    case Rarity.Mythic:
+      return '#EC4899'; // Bright Pink/Magenta (cosmic/mythical)
     default:
       return '#6B7280';
   }

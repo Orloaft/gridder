@@ -10,6 +10,9 @@ export interface GameGridProps {
   cellSize: number;
   occupants: AnyGridOccupant[];
   zoom?: number; // Zoom level (1.0 = normal, 0.5 = 50%, etc.)
+  backgroundImage?: string; // Custom background image path
+  backgroundScrollX?: number; // Horizontal scroll position for background (in pixels)
+  backgroundTransitionDuration?: number; // Duration for background scroll animation (in ms)
   onOccupantClick?: (occupant: AnyGridOccupant) => void;
   onEmptyCellClick?: (position: GridPosition) => void;
   onUnitHover?: (occupant: AnyGridOccupant | null) => void;
@@ -23,6 +26,9 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
       cellSize,
       occupants,
       zoom = 1.0,
+      backgroundImage = '/gridbg.png',
+      backgroundScrollX = 0,
+      backgroundTransitionDuration = 1000,
       onOccupantClick,
       onEmptyCellClick,
       onUnitHover,
@@ -50,17 +56,24 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
 
   return (
     <div
-      className="relative transition-transform duration-300 ease-out origin-center"
+      className="relative transition-transform duration-300 ease-out origin-center overflow-hidden"
       style={{
         width: cols * cellSize,
         height: rows * cellSize,
         transform: `scale(${zoom})`,
-        backgroundImage: 'url(/gridbg.png)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
       }}
     >
+      {/* Scrolling background layer */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `url(${backgroundImage})`,
+          backgroundSize: 'auto 100%',
+          backgroundPosition: `${-backgroundScrollX}px center`,
+          backgroundRepeat: 'repeat-x',
+          transition: `background-position ${backgroundTransitionDuration}ms ease-in-out`,
+        }}
+      />
       {/* Grid cells - very subtle background */}
       <div className="absolute inset-0 grid" style={{
         gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
@@ -81,23 +94,34 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
 
       {/* Occupants rendered on top */}
       <div ref={ref} className="absolute inset-0 pointer-events-none" style={{ overflow: 'hidden' }}>
-        {occupants.map((occupant) => (
-          <div
-            key={occupant.id}
-            className="absolute pointer-events-auto"
-            style={{
-              left: occupant.position.col * cellSize,
-              top: occupant.position.row * cellSize,
-              width: cellSize,
-              height: cellSize,
-            }}
-            onClick={() => onOccupantClick?.(occupant)}
-            onMouseEnter={() => onUnitHover?.(occupant)}
-            onMouseLeave={() => onUnitHover?.(null)}
-          >
-            <GridOccupantRenderer occupant={occupant} cellSize={cellSize} />
-          </div>
-        ))}
+        {occupants.map((occupant, index) => {
+          // Debug first few hero positions
+          if (occupant.type === 1 && index < 3) { // GridOccupantType.Hero = 1
+            console.log(`[GameGrid] Rendering occupant ${occupant.id}:`, {
+              position: occupant.position,
+              calculatedLeft: occupant.position.col * cellSize,
+              calculatedTop: occupant.position.row * cellSize,
+              cellSize
+            });
+          }
+          return (
+            <div
+              key={occupant.id}
+              className="absolute pointer-events-auto"
+              style={{
+                left: occupant.position.col * cellSize,
+                top: occupant.position.row * cellSize,
+                width: cellSize,
+                height: cellSize,
+              }}
+              onClick={() => onOccupantClick?.(occupant)}
+              onMouseEnter={() => onUnitHover?.(occupant)}
+              onMouseLeave={() => onUnitHover?.(null)}
+            >
+              <GridOccupantRenderer occupant={occupant} cellSize={cellSize} />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

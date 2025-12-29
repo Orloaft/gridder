@@ -235,7 +235,8 @@ export function animateArrow(
   casterPosition: GridPosition,
   targetPosition: GridPosition,
   cellSize: number,
-  containerElement: HTMLElement
+  containerElement: HTMLElement,
+  projectileColor: string = '#FFD700' // Default to gold
 ): gsap.core.Timeline {
   const tl = gsap.timeline();
 
@@ -255,7 +256,7 @@ export function animateArrow(
     ease: 'power2.out',
   });
 
-  // Create arrow projectile
+  // Create arrow/projectile
   const arrow = document.createElement('div');
   arrow.className = 'skill-arrow';
   arrow.style.position = 'absolute';
@@ -263,8 +264,50 @@ export function animateArrow(
   arrow.style.height = '4px';
   arrow.style.left = `${casterPixelPos.x + cellSize / 2}px`;
   arrow.style.top = `${casterPixelPos.y + cellSize / 2}px`;
-  arrow.style.background = 'linear-gradient(90deg, #8B4513 0%, #D2691E 70%, #FFD700 100%)';
-  arrow.style.boxShadow = '0 0 4px rgba(139, 69, 19, 0.5)';
+
+  // Use provided color for projectile with enhanced gradients
+  if (projectileColor === '#00BFFF') {
+    // Frost bolt - ice blue gradient
+    arrow.style.background = 'linear-gradient(90deg, #87CEEB 0%, #00BFFF 50%, #B0E0E6 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px ${projectileColor}`;
+  } else if (projectileColor === '#FF4500' || projectileColor === '#FF6347') {
+    // Fire bolt - flame gradient
+    arrow.style.background = 'linear-gradient(90deg, #FF6347 0%, #FF4500 50%, #FFD700 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px #FFA500`;
+  } else if (projectileColor === '#9370DB' || projectileColor === '#9400D3') {
+    // Lightning/Life drain - electric purple
+    arrow.style.background = 'linear-gradient(90deg, #E6E6FA 0%, #9370DB 50%, #DDA0DD 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px #E6E6FA`;
+  } else if (projectileColor === '#4B0082') {
+    // Void/Death bolt - dark purple
+    arrow.style.background = 'linear-gradient(90deg, #191970 0%, #4B0082 50%, #8B008B 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px #9400D3`;
+  } else if (projectileColor === '#32CD32' || projectileColor === '#00FF00') {
+    // Acid/Poison - toxic green
+    arrow.style.background = 'linear-gradient(90deg, #228B22 0%, #32CD32 50%, #7FFF00 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px #00FF00`;
+  } else if (projectileColor === '#8B008B') {
+    // Dark bolt - dark magenta
+    arrow.style.background = 'linear-gradient(90deg, #4B0082 0%, #8B008B 50%, #DA70D6 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px #9932CC`;
+  } else if (projectileColor === '#F5DEB3') {
+    // Bone throw - bone white
+    arrow.style.background = 'linear-gradient(90deg, #D2B48C 0%, #F5DEB3 50%, #FFFAF0 100%)';
+    arrow.style.boxShadow = `0 0 4px rgba(245, 222, 179, 0.8), 0 0 8px rgba(255, 255, 255, 0.5)`;
+  } else if (projectileColor === '#00CED1') {
+    // Ice shard - ice cyan
+    arrow.style.background = 'linear-gradient(90deg, #B0E0E6 0%, #00CED1 50%, #E0FFFF 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px #AFEEEE`;
+  } else if (projectileColor === '#DC143C' || projectileColor === '#8B0000') {
+    // Blood/Weakness curse - blood red
+    arrow.style.background = 'linear-gradient(90deg, #8B0000 0%, #DC143C 50%, #FF6B6B 100%)';
+    arrow.style.boxShadow = `0 0 8px ${projectileColor}, 0 0 16px #FF0000`;
+  } else {
+    // Default arrow - brown to gold
+    arrow.style.background = 'linear-gradient(90deg, #8B4513 0%, #D2691E 70%, #FFD700 100%)';
+    arrow.style.boxShadow = '0 0 4px rgba(139, 69, 19, 0.5)';
+  }
+
   arrow.style.pointerEvents = 'none';
   arrow.style.zIndex = '1500';
   arrow.style.transformOrigin = 'left center';
@@ -389,6 +432,33 @@ export function animateFireball(
   });
 
   return tl;
+}
+
+/**
+ * Simple Buff/Debuff Animation
+ * For single target buff/debuff effects
+ */
+export function animateSimpleBuff(
+  targetElement: HTMLElement,
+  color: string = '#4CAF50',
+  isDebuff: boolean = false
+): void {
+  if (!targetElement || !targetElement.parentElement) {
+    console.warn('Cannot animate buff - target element or parent not found');
+    return;
+  }
+
+  // Simple glow effect
+  gsap.to(targetElement, {
+    filter: isDebuff
+      ? `drop-shadow(0 0 10px ${color}) brightness(0.8)`
+      : `drop-shadow(0 0 15px ${color}) brightness(1.2)`,
+    scale: isDebuff ? 0.95 : 1.05,
+    duration: 0.3,
+    yoyo: true,
+    repeat: 1,
+    ease: 'power2.inOut'
+  });
 }
 
 /**

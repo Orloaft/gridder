@@ -16,8 +16,8 @@ export function createHeroMenuLayout(
     [Rarity.Common]: 1,
     [Rarity.Uncommon]: 2,
     [Rarity.Rare]: 3,
-    [Rarity.Epic]: 4,
-    [Rarity.Legendary]: 5,
+    [Rarity.Legendary]: 4,
+    [Rarity.Mythic]: 5,
   };
 
   const allHeroes = Object.values(HERO_TEMPLATES).sort((a, b) => {
@@ -87,6 +87,7 @@ export function createHeroMenuLayout(
     label: 'Back',
     icon: '←',
     variant: 'secondary',
+    description: 'Return to the main menu',
     onClick: () => onNavigate(ScreenType.MainMenu),
     animationDelay: 0,
   });

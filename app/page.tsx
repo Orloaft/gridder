@@ -5,12 +5,16 @@ import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
 import { GameGrid } from '@/components/Grid/GameGrid';
 import { LoadingBar } from '@/components/LoadingBar';
-import { UnitInfoPanel } from '@/components/UnitInfoPanel';
+import { OccupantInfoPanel } from '@/components/OccupantInfoPanel';
 import { StageInfoPanel } from '@/components/StageInfoPanel';
 import { LocationInfoPanel } from '@/components/LocationInfoPanel';
 import { CombatLog } from '@/components/CombatLog';
 import { ZoomControls } from '@/components/ZoomControls';
 import { InventoryGrid } from '@/components/InventoryGrid';
+import { DoomsdayTracker } from '@/components/DoomsdayTracker';
+import { DoomsdayEventModal } from '@/components/DoomsdayEventModal';
+import { TimePassageAnimation } from '@/components/TimePassageAnimation';
+import { HeroUnlockPanel } from '@/components/HeroUnlockPanel';
 import { animateGridTransition, animateGridEntrance } from '@/animations/gridTransitions';
 import { audioManager } from '@/utils/audioManager';
 import { getStageById } from '@/data/stages';
@@ -19,6 +23,8 @@ import { useBattleAutoAdvance } from '@/hooks/useBattleAutoAdvance';
 import { useBattleAnimations } from '@/hooks/useBattleAnimations';
 import { useResponsiveGrid } from '@/hooks/useResponsiveGrid';
 import { useRewardReveal } from '@/hooks/useRewardReveal';
+import { useDoomsdaySystem } from '@/hooks/useDoomsdaySystem';
+import { usePositionManager } from '@/hooks/usePositionManager';
 import { GridHero, GridEnemy, isGridHero, isGridEnemy, AnyGridOccupant } from '@/types/grid.types';
 import { ItemInstance } from '@/types/core.types';
 import { createCampaignMapLayout } from '@/screens/CampaignMap/CampaignMapLayout';
@@ -34,13 +40,20 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showGrid, setShowGrid] = useState(false);
-  const [hoveredUnit, setHoveredUnit] = useState<GridHero | GridEnemy | null>(null);
+  const [hoveredOccupant, setHoveredOccupant] = useState<AnyGridOccupant | null>(null);
   const [hoveredItem, setHoveredItem] = useState<ItemInstance | null>(null);
   const [draggedItem, setDraggedItem] = useState<ItemInstance | null>(null);
   const [hoveredStageId, setHoveredStageId] = useState<number | null>(null);
   const [hoveredLocationId, setHoveredLocationId] = useState<string | null>(null);
   const [hoveredShopItem, setHoveredShopItem] = useState<any | null>(null); // For shop items
   const [showRetreatConfirmation, setShowRetreatConfirmation] = useState(false);
+  const [showDoomsdayEvent, setShowDoomsdayEvent] = useState(false);
+  const [currentDoomsdayEvent, setCurrentDoomsdayEvent] = useState<any>(null);
+  const [showTimePassage, setShowTimePassage] = useState(false);
+  const [timePassageData, setTimePassageData] = useState<any>(null);
+  const [showHeroUnlock, setShowHeroUnlock] = useState(false);
+  const [backgroundScrollX, setBackgroundScrollX] = useState(0);
+  const [isScrolling, setIsScrolling] = useState(false);
 
   // Auto-advance battle events (200ms base for tick-based combat)
   useBattleAutoAdvance(200);
@@ -48,8 +61,53 @@ export default function Home() {
   // Handle battle animations
   useBattleAnimations();
 
+  // Handle position management and animation coordination
+  usePositionManager();
+
   // Handle reward reveal lifecycle
   useRewardReveal();
+
+  // Handle doomsday system
+  const {
+    doomsdayState,
+    urgencyLevel,
+    processMissionStart,
+    processRetreat
+  } = useDoomsdaySystem();
+
+  // Listen for time passage events using custom events instead of polling
+  useEffect(() => {
+    const handleTimePassage = (event: CustomEvent) => {
+      const data = event.detail;
+      if (data && !showTimePassage) { // Prevent duplicate triggers
+        setTimePassageData(data);
+        setShowTimePassage(true);
+      }
+    };
+
+    const handleDoomsdayEvent = (event: CustomEvent) => {
+      const eventData = event.detail;
+      if (eventData && !showDoomsdayEvent) { // Prevent duplicate triggers
+        setCurrentDoomsdayEvent(eventData);
+        setShowDoomsdayEvent(true);
+      }
+    };
+
+    const handleOpenHeroUnlock = () => {
+      setShowHeroUnlock(true);
+    };
+
+    // Listen for custom events
+    window.addEventListener('timePassage', handleTimePassage as any);
+    window.addEventListener('doomsdayEvent', handleDoomsdayEvent as any);
+    window.addEventListener('openHeroUnlock', handleOpenHeroUnlock);
+
+    return () => {
+      window.removeEventListener('timePassage', handleTimePassage as any);
+      window.removeEventListener('doomsdayEvent', handleDoomsdayEvent as any);
+      window.removeEventListener('openHeroUnlock', handleOpenHeroUnlock);
+    };
+  }, [showTimePassage, showDoomsdayEvent]);
 
   // Get responsive dimensions
   const responsiveDimensions = useResponsiveGrid();
@@ -68,6 +126,7 @@ export default function Home() {
     inventory,
     roster,
     equipItem,
+    sellItem,
     currentBattle,
     battleEventIndex,
     gridSize,
@@ -82,9 +141,42 @@ export default function Home() {
     refreshShop,
     retreatFromBattle,
     preBattleTeam,
+    unlockHero,
   } = useGameStore();
 
   const prevInventoryLength = useRef(inventory.length);
+
+  // Handle background scrolling for wave transitions
+  useEffect(() => {
+    const handleWaveTransition = (event: CustomEvent) => {
+      const { scrollDistance, duration } = event.detail;
+      // Scroll the background by scrollDistance (not cumulative)
+      setBackgroundScrollX(prev => {
+        const newScrollX = prev + scrollDistance;
+        console.log('[WaveTransition] Scrolling background from', prev, 'to', newScrollX);
+        return newScrollX;
+      });
+      setIsScrolling(true);
+
+      // Reset scrolling flag after animation
+      setTimeout(() => {
+        setIsScrolling(false);
+      }, 1000);
+    };
+
+    window.addEventListener('waveTransition', handleWaveTransition as any);
+
+    return () => {
+      window.removeEventListener('waveTransition', handleWaveTransition as any);
+    };
+  }, []);
+
+  // Reset scroll when battle ends
+  useEffect(() => {
+    if (!currentBattle) {
+      setBackgroundScrollX(0);
+    }
+  }, [currentBattle]);
 
   // Initialize grid immediately on mount (before loading)
   useEffect(() => {
@@ -220,13 +312,9 @@ export default function Home() {
     }
   };
 
-  // Handle unit hover
+  // Handle occupant hover (all types)
   const handleUnitHover = useCallback((occupant: AnyGridOccupant | null) => {
-    if (occupant && (isGridHero(occupant) || isGridEnemy(occupant))) {
-      setHoveredUnit(occupant);
-    } else {
-      setHoveredUnit(null);
-    }
+    setHoveredOccupant(occupant);
   }, []);
 
   // Handle item hover
@@ -272,7 +360,7 @@ export default function Home() {
     let medicalCosts = 0;
     let faintedCount = 0;
     preBattleTeam.forEach(heroId => {
-      const battleHero = currentBattle.heroes.find(h => h.instanceId === heroId);
+      const battleHero = currentBattle.heroes.find(h => h.id === heroId);
       if (battleHero && !battleHero.isAlive) {
         faintedCount++;
         medicalCosts += 125; // Average cost for display
@@ -382,10 +470,15 @@ export default function Home() {
 
   return (
     <>
+      {/* Doomsday Clock Tracker - always visible at top */}
+      {showGrid && (
+        <DoomsdayTracker position="top" expanded={false} />
+      )}
+
       {/* Main Game - always rendered, background always visible */}
       <div
         ref={screenRef}
-        className={`min-h-screen ${getBackgroundClass()} flex items-center justify-center p-8 gap-8 transition-colors duration-700`}
+        className={`min-h-screen ${getBackgroundClass()} flex items-center justify-center p-8 gap-8 transition-colors duration-700 ${showGrid ? 'pt-20' : ''}`}
       >
         {/* Left Panel - shows different content based on screen */}
         {showGrid && (
@@ -404,15 +497,15 @@ export default function Home() {
                 isUnlocked={hoveredStageId ? isStageUnlocked(hoveredStageId, campaign.stagesCompleted) : false}
                 width={responsiveDimensions.unitInfoPanelWidth}
               />
-            ) : currentScreen === ScreenType.Battle && currentBattle && !hoveredUnit ? (
+            ) : currentScreen === ScreenType.Battle && currentBattle && !hoveredOccupant ? (
               <CombatLog
                 events={currentBattle.events}
                 currentEventIndex={battleEventIndex}
                 width={responsiveDimensions.unitInfoPanelWidth}
               />
             ) : (
-              <UnitInfoPanel
-                unit={hoveredUnit}
+              <OccupantInfoPanel
+                occupant={hoveredOccupant}
                 hoveredItem={hoveredShopItem || hoveredItem}
                 roster={roster}
                 inventory={inventory}
@@ -433,6 +526,9 @@ export default function Home() {
             zoom={zoomLevel}
             occupants={showGrid ? gridOccupants : []}
             onUnitHover={handleUnitHover}
+            backgroundImage={currentScreen === ScreenType.Battle ? '/darkwoodbackground.png' : '/gridbg.png'}
+            backgroundScrollX={backgroundScrollX}
+            backgroundTransitionDuration={isScrolling ? 1000 : 0}
           />
         </div>
 
@@ -449,6 +545,7 @@ export default function Home() {
               onItemHover={handleItemHover}
               onItemDragStart={handleItemDragStart}
               onItemDragEnd={handleItemDragEnd}
+              onItemSell={(item) => sellItem(item.instanceId)}
               cellSize={responsiveDimensions.inventoryGridCellSize}
             />
           </div>
@@ -600,6 +697,37 @@ export default function Home() {
           </div>
         );
       })()}
+
+      {/* Time Passage Animation */}
+      <TimePassageAnimation
+        show={showTimePassage}
+        daysElapsed={timePassageData?.daysElapsed || 0}
+        previousDay={timePassageData?.previousDay || 1}
+        newDay={timePassageData?.newDay || 1}
+        action={timePassageData?.action || ''}
+        onComplete={() => {
+          setShowTimePassage(false);
+          setTimePassageData(null);
+        }}
+      />
+
+      {/* Doomsday Event Modal */}
+      <DoomsdayEventModal
+        event={currentDoomsdayEvent}
+        onClose={() => {
+          setCurrentDoomsdayEvent(null);
+          setShowDoomsdayEvent(false);
+        }}
+      />
+
+      {/* Hero Unlock Panel */}
+      {showHeroUnlock && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[9999] p-8">
+          <HeroUnlockPanel
+            onClose={() => setShowHeroUnlock(false)}
+          />
+        </div>
+      )}
     </>
   );
 }

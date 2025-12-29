@@ -6,6 +6,7 @@ import { ICON_PATHS } from '@/utils/iconPaths';
 import { Difficulty } from '@/types/core.types';
 import { getLocationById } from '@/data/locations';
 
+// Campaign map is deprecated - we go straight from location to pre-battle now
 export function createCampaignMapLayout(
   completedStages: Set<number>,
   _navigate: (screen: ScreenType) => void,
@@ -32,6 +33,7 @@ export function createCampaignMapLayout(
     label: 'Back',
     icon: generateButtonIcon('back'),
     variant: 'secondary',
+    description: 'Return to the location map to select a different region',
     onClick: () => navigate(ScreenType.LocationMap),
     animationDelay: 0.1,
   });
@@ -66,6 +68,7 @@ export function createCampaignMapLayout(
         label: 'Shop',
         icon: '🛒',
         variant: 'secondary',
+        description: 'Visit the shop to purchase items and recruit new heroes for your roster',
         onClick: () => navigate(ScreenType.Shop),
         animationDelay: 0.02 + row * 7 * 0.02, // Appear with row's stages
       });
@@ -113,6 +116,20 @@ export function createCampaignMapLayout(
       }
     }
 
+    // Create description based on stage state
+    let stageDescription = '';
+    if (isCompleted) {
+      stageDescription = `Stage ${stage.id} - Completed! Click to replay this stage for additional rewards`;
+    } else if (isUnlocked) {
+      if (stage.difficulty === Difficulty.Boss) {
+        stageDescription = `Stage ${stage.id} - Boss Battle! Defeat the boss for bonus gems and rare loot`;
+      } else {
+        stageDescription = `Stage ${stage.id} - Click to select your team and begin this battle`;
+      }
+    } else {
+      stageDescription = `Stage ${stage.id} - Locked. Complete previous stages to unlock`;
+    }
+
     occupants.push({
       id: `stage-${stage.id}`,
       type: GridOccupantType.Button,
@@ -121,6 +138,7 @@ export function createCampaignMapLayout(
       icon,
       variant,
       disabled: !isUnlocked,
+      description: stageDescription,
       onClick: () => {
         // When clicking an unlocked stage, navigate to PreBattle screen
         onStageSelect(stage.id);

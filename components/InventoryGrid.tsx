@@ -14,6 +14,7 @@ interface InventoryGridProps {
   onItemHover: (item: ItemInstance | null) => void;
   onItemDragStart: (item: ItemInstance) => void;
   onItemDragEnd: () => void;
+  onItemSell?: (item: ItemInstance) => void;
   cellSize?: number; // Optional cell size for responsive layouts
 }
 

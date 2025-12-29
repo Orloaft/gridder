@@ -10,6 +10,7 @@ interface PlayerStatsAndInventoryProps {
   inventory: ItemInstance[];
   onItemDragStart: (item: ItemInstance) => void;
   onItemDragEnd: () => void;
+  onItemSell?: (item: ItemInstance) => void;
 }
 
 export function PlayerStatsAndInventory({
@@ -19,8 +20,10 @@ export function PlayerStatsAndInventory({
   inventory,
   onItemDragStart,
   onItemDragEnd,
+  onItemSell,
 }: PlayerStatsAndInventoryProps) {
   const [draggedItem, setDraggedItem] = useState<ItemInstance | null>(null);
+  const [sellingMode, setSellingMode] = useState(false);
 
   const handleDragStart = (item: ItemInstance, e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -68,6 +71,26 @@ export function PlayerStatsAndInventory({
     }
   };
 
+  const getItemSellPrice = (item: ItemInstance): number => {
+    // Base prices by rarity
+    const basePrices: Record<string, number> = {
+      common: 25,
+      uncommon: 50,
+      rare: 100,
+      epic: 200,
+      legendary: 400,
+      mythic: 800,
+    };
+
+    return basePrices[item.rarity] || 25;
+  };
+
+  const handleSellItem = (item: ItemInstance) => {
+    if (onItemSell && !item.equippedTo) {
+      onItemSell(item);
+    }
+  };
+
   // Separate equipped and unequipped items
   const equippedItems = inventory.filter(item => item.equippedTo);
   const unequippedItems = inventory.filter(item => !item.equippedTo);
@@ -108,14 +131,30 @@ export function PlayerStatsAndInventory({
 
       {/* Inventory Section */}
       <div className="flex-1">
-        <h2 className="text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2">
-          Inventory ({inventory.length})
-        </h2>
+        <div className="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+          <h2 className="text-xl font-bold text-white">
+            Inventory ({inventory.length})
+          </h2>
+          {onItemSell && (
+            <button
+              onClick={() => setSellingMode(!sellingMode)}
+              className={`px-3 py-1 rounded-lg text-sm font-semibold transition-colors ${
+                sellingMode
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}
+            >
+              {sellingMode ? '💰 Selling Mode' : '💰 Sell Items'}
+            </button>
+          )}
+        </div>
 
         {/* Instructions */}
-        <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 mb-4">
-          <p className="text-xs text-blue-300">
-            Drag items onto heroes to equip them. Each hero can hold one item.
+        <div className={`${sellingMode ? 'bg-red-900/20 border-red-700/50' : 'bg-blue-900/20 border-blue-700/50'} border rounded-lg p-3 mb-4`}>
+          <p className={`text-xs ${sellingMode ? 'text-red-300' : 'text-blue-300'}`}>
+            {sellingMode
+              ? 'Click on unequipped items to sell them for gold. Equipped items cannot be sold.'
+              : 'Drag items onto heroes to equip them. Each hero can hold one item.'}
           </p>
         </div>
 
@@ -148,33 +187,48 @@ export function PlayerStatsAndInventory({
             <div>
               <h3 className="text-sm font-semibold text-gray-400 mb-2">Available</h3>
               <div className="grid grid-cols-3 gap-2">
-                {unequippedItems.map((item) => (
-                  <div
-                    key={item.instanceId}
-                    draggable
-                    onDragStart={(e) => handleDragStart(item, e)}
-                    onDragEnd={handleDragEnd}
-                    className={`relative aspect-square border-2 ${getRarityColor(item.rarity)} rounded-lg p-2 flex flex-col items-center justify-center cursor-move hover:scale-105 transition-transform ${
-                      draggedItem?.instanceId === item.instanceId ? 'opacity-50' : ''
-                    }`}
-                    title={item.description}
-                  >
-                    <div className="text-3xl mb-1">{item.spritePath || '🗡️'}</div>
-                    <div className={`text-xs text-center ${getRarityTextColor(item.rarity)} line-clamp-1 font-semibold`}>
-                      {item.name}
+                {unequippedItems.map((item) => {
+                  const sellPrice = getItemSellPrice(item);
+                  return (
+                    <div
+                      key={item.instanceId}
+                      draggable={!sellingMode}
+                      onDragStart={(e) => !sellingMode && handleDragStart(item, e)}
+                      onDragEnd={!sellingMode ? handleDragEnd : undefined}
+                      onClick={() => sellingMode && handleSellItem(item)}
+                      className={`relative aspect-square border-2 ${getRarityColor(item.rarity)} rounded-lg p-2 flex flex-col items-center justify-center ${
+                        sellingMode
+                          ? 'cursor-pointer hover:border-red-500 hover:bg-red-900/30'
+                          : 'cursor-move hover:scale-105'
+                      } transition-all ${
+                        draggedItem?.instanceId === item.instanceId ? 'opacity-50' : ''
+                      }`}
+                      title={sellingMode ? `Sell for ${sellPrice}g` : item.description}
+                    >
+                      <div className="text-3xl mb-1">{item.spritePath || '🗡️'}</div>
+                      <div className={`text-xs text-center ${getRarityTextColor(item.rarity)} line-clamp-1 font-semibold`}>
+                        {item.name}
+                      </div>
+                      {sellingMode && (
+                        <div className="absolute bottom-1 left-0 right-0 bg-black/80 rounded px-1 py-0.5">
+                          <div className="text-xs text-yellow-400 font-bold text-center">
+                            {sellPrice}g
+                          </div>
+                        </div>
+                      )}
+                      {!sellingMode && item.consumable && (
+                        <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold border border-white">
+                          1
+                        </div>
+                      )}
+                      {!sellingMode && item.permanent && (
+                        <div className="absolute top-1 left-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold border border-white">
+                          ∞
+                        </div>
+                      )}
                     </div>
-                    {item.consumable && (
-                      <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold border border-white">
-                        1
-                      </div>
-                    )}
-                    {item.permanent && (
-                      <div className="absolute top-1 left-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold border border-white">
-                        ∞
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

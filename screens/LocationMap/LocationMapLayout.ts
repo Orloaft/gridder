@@ -99,11 +99,13 @@ export function createLocationMapLayout(
           // Navigate based on location type
           if (location.type === LocationType.Combat) {
             // Combat locations now represent single multi-wave missions
-            // Set the stage to the first stage in this location's range
-            if (location.stageRange) {
-              const { useGameStore } = require('@/store/gameStore');
-              const stageId = location.stageRange.start; // Use first stage of location as the mission
-              useGameStore.setState({ selectedStageId: stageId });
+            const { useGameStore } = require('@/store/gameStore');
+            const { getLocationStage } = require('@/data/stages');
+
+            // Get the location's mega-stage
+            const locationStage = getLocationStage(location.id);
+            if (locationStage) {
+              useGameStore.setState({ selectedStageId: locationStage.id });
 
               // Navigate directly to PreBattle
               if ((window as any).__gridNavigate) {

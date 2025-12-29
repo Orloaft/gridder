@@ -2,12 +2,13 @@ import gsap from 'gsap';
 import { GridPosition } from '@/types/grid.types';
 
 /**
- * Clamp grid position to valid bounds (0-7)
+ * Clamp grid position to valid bounds
+ * Allow col up to 8 for off-screen enemy spawning
  */
 function clampGridPosition(position: GridPosition): GridPosition {
   return {
     row: Math.max(0, Math.min(7, position.row)),
-    col: Math.max(0, Math.min(7, position.col)),
+    col: Math.max(0, Math.min(8, position.col)), // Allow col: 8 for off-screen
   };
 }
 
@@ -29,7 +30,7 @@ export function animateTileSlide(
   duration: number = 0.5,
   onComplete?: () => void
 ): void {
-  // Clamp positions to ensure they're within grid bounds (0-7)
+  // Clamp positions to ensure they're within valid bounds (0-7 for row, 0-8 for col)
   const clampedFrom = clampGridPosition(fromPosition);
   const clampedTo = clampGridPosition(toPosition);
 
@@ -46,30 +47,25 @@ export function animateTileSlide(
   window.__tileAnimationPlaying = true;
   console.log('[animateTileSlide] Starting slide animation', { fromPosition, toPosition });
 
-  // First, ensure the element is at the starting position
-  gsap.set(element, {
-    left: fromX,
-    top: fromY,
+  // The element has been pre-positioned using transforms by useBattleAnimations
+  // It's currently at the "from" position via transform offset
+  // We just need to animate the transform back to (0,0) which will move it to "to" position
+
+  // Get current transform values
+  const currentX = gsap.getProperty(element, 'x') as number || 0;
+  const currentY = gsap.getProperty(element, 'y') as number || 0;
+
+  console.log(`[animateTileSlide] Current transform: x=${currentX}, y=${currentY}`);
+
+  // Animate the transform from its current offset to (0,0)
+  // This creates the movement from "from" to "to"
+  const tween = gsap.to(element, {
     x: 0,
     y: 0,
-  });
-
-  // Then animate using transforms for smooth diagonal movement
-  // Transforms are hardware-accelerated and guarantee simultaneous X/Y movement
-  const tween = gsap.to(element, {
-    x: deltaX,
-    y: deltaY,
     duration,
     ease: 'power2.inOut',
     onComplete: () => {
-      // After animation completes, update position and reset transform
-      // This prevents transform accumulation on subsequent moves
-      gsap.set(element, {
-        left: toX,
-        top: toY,
-        x: 0,
-        y: 0,
-      });
+      // Transform is now at (0,0), element is at its final position
       // Clear tile animation flag
       window.__tileAnimationPlaying = false;
       console.log('[animateTileSlide] Animation complete, flag cleared');

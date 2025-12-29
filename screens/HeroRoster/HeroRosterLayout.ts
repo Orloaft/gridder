@@ -32,6 +32,31 @@ export function createHeroRosterLayout(
     animationDelay: 0.1,
   });
 
+  // Row 0: Gems display
+  occupants.push({
+    id: 'gems-display',
+    type: GridOccupantType.Decoration,
+    position: { row: 0, col: 10 },
+    text: `💎 ${playerGems}`,
+    style: 'resource',
+    animationDelay: 0.12,
+  });
+
+  // Row 0: Unlock Heroes button
+  occupants.push({
+    id: 'btn-unlock-heroes',
+    type: GridOccupantType.Button,
+    position: { row: 0, col: 11 },
+    label: 'Unlock',
+    icon: '🔓',
+    variant: 'primary',
+    onClick: () => {
+      // Dispatch custom event to open hero unlock panel
+      window.dispatchEvent(new CustomEvent('openHeroUnlock'));
+    },
+    animationDelay: 0.14,
+  });
+
   // Row 1: Title
   occupants.push({
     id: 'roster-title',

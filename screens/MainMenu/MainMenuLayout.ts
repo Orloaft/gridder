@@ -26,6 +26,7 @@ export function createMainMenuLayout(
     label: 'Campaign',
     icon: generateButtonIcon('campaign'),
     variant: 'primary',
+    description: 'Start or continue your campaign journey through various locations and battles',
     onClick: () => navigate(ScreenType.LocationMap),
     animationDelay: 0.1,
   });
@@ -38,6 +39,7 @@ export function createMainMenuLayout(
     label: 'Heroes',
     icon: '⚔️',
     variant: 'primary',
+    description: 'View and manage your roster of heroes, equip items, and upgrade abilities',
     onClick: () => navigate(ScreenType.HeroMenu),
     animationDelay: 0.2,
   });
@@ -50,6 +52,7 @@ export function createMainMenuLayout(
     label: 'Settings',
     icon: generateButtonIcon('settings'),
     variant: 'secondary',
+    description: 'Adjust game settings, audio, and other preferences',
     onClick: () => navigate(ScreenType.Settings),
     animationDelay: 0.3,
   });

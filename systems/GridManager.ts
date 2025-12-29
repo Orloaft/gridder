@@ -46,17 +46,25 @@ export class GridManager {
    * Returns true if successful, false if tile already occupied or out of bounds
    */
   public occupy(position: GridPosition, unitId: string): boolean {
-    if (!this.isInBounds(position)) {
-      console.warn(`[GridManager] Cannot occupy out of bounds position:`, position);
+    // Validate position structure
+    if (!position || typeof position.row !== 'number' || typeof position.col !== 'number') {
+      console.error(`[GridManager] Invalid position structure:`, position);
       return false;
     }
 
-    if (this.isOccupied(position)) {
-      console.warn(`[GridManager] Cannot occupy already occupied position:`, position);
+    if (!this.isInBounds(position)) {
+      console.warn(`[GridManager] Cannot occupy out of bounds position (${position.row},${position.col})`);
+      return false;
+    }
+
+    const currentOccupant = this.getOccupant(position);
+    if (currentOccupant) {
+      console.warn(`[GridManager] Cannot occupy (${position.row},${position.col}) - already occupied by ${currentOccupant}`);
       return false;
     }
 
     this.occupancy.set(this.key(position), unitId);
+    // Debug: console.log(`[GridManager] Unit ${unitId} occupied (${position.row},${position.col})`);
     return true;
   }
 
@@ -64,7 +72,12 @@ export class GridManager {
    * Vacate a tile (for unit death/despawn)
    */
   public vacate(position: GridPosition): void {
-    this.occupancy.delete(this.key(position));
+    const key = this.key(position);
+    const occupant = this.occupancy.get(key);
+    if (occupant) {
+      this.occupancy.delete(key);
+      // Debug: console.log(`[GridManager] Unit ${occupant} vacated (${position.row},${position.col})`);
+    }
   }
 
   /**
@@ -79,25 +92,35 @@ export class GridManager {
    * Returns true if successful, false if move was blocked
    */
   public move(unitId: string, from: GridPosition, to: GridPosition): boolean {
-    // Validate destination
-    if (!this.isInBounds(to)) {
+    // Validate positions
+    if (!from || !to) {
+      console.error(`[GridManager] Invalid positions for move:`, { from, to });
       return false;
     }
 
-    if (this.isOccupied(to)) {
+    // Validate destination
+    if (!this.isInBounds(to)) {
+      console.warn(`[GridManager] Unit ${unitId} cannot move to out of bounds (${to.row},${to.col})`);
+      return false;
+    }
+
+    const destOccupant = this.getOccupant(to);
+    if (destOccupant) {
+      // Debug: console.log(`[GridManager] Unit ${unitId} cannot move to (${to.row},${to.col}) - occupied by ${destOccupant}`);
       return false;
     }
 
     // Validate unit actually occupies source position
     const currentOccupant = this.getOccupant(from);
     if (currentOccupant !== unitId) {
-      console.warn(`[GridManager] Unit ${unitId} tried to move from ${this.key(from)} but doesn't occupy it (occupied by: ${currentOccupant})`);
+      console.error(`[GridManager] Unit ${unitId} tried to move from (${from.row},${from.col}) but doesn't occupy it (occupied by: ${currentOccupant || 'nobody'})`);
       return false;
     }
 
     // Atomic move: vacate source, occupy destination
     this.vacate(from);
-    this.occupy(to, unitId);
+    this.occupancy.set(this.key(to), unitId); // Direct set since we already validated
+    // Debug: console.log(`[GridManager] Unit ${unitId} moved from (${from.row},${from.col}) to (${to.row},${to.col})`);
     return true;
   }
 
@@ -209,6 +232,41 @@ export class GridManager {
    */
   private key(position: GridPosition): string {
     return `${position.row},${position.col}`;
+  }
+
+  /**
+   * Debug method to verify grid consistency
+   * Returns array of issues found
+   */
+  public verifyConsistency(units: Array<{ id: string; position: GridPosition; isAlive: boolean }>): string[] {
+    const issues: string[] = [];
+
+    // Check that all alive units have their positions registered
+    for (const unit of units) {
+      if (!unit.isAlive) continue;
+
+      const occupant = this.getOccupant(unit.position);
+      if (occupant !== unit.id) {
+        issues.push(`Unit ${unit.id} at (${unit.position.row},${unit.position.col}) but grid shows ${occupant || 'empty'}`);
+      }
+    }
+
+    // Check that all occupied positions have corresponding alive units
+    for (const [key, unitId] of this.occupancy.entries()) {
+      const unit = units.find(u => u.id === unitId);
+      if (!unit) {
+        issues.push(`Grid has ${unitId} at ${key} but unit not found`);
+      } else if (!unit.isAlive) {
+        issues.push(`Grid has dead unit ${unitId} at ${key}`);
+      } else {
+        const expectedKey = this.key(unit.position);
+        if (key !== expectedKey) {
+          issues.push(`Grid has ${unitId} at ${key} but unit position is ${expectedKey}`);
+        }
+      }
+    }
+
+    return issues;
   }
 
   // ========================================

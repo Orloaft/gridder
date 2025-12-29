@@ -32,7 +32,9 @@ export function CombatLog({ events, currentEventIndex, width }: CombatLogProps) 
 
     switch (type) {
       case BattleEventType.BattleStart:
-        message = `⚔️ Battle begins! Heroes vs ${data.enemies.join(', ')}`;
+        message = data.enemies
+          ? `⚔️ Battle begins! Heroes vs ${data.enemies.join(', ')}`
+          : '⚔️ Battle begins!';
         colorClass = 'text-blue-400 font-bold';
         icon = '⚔️';
         break;
@@ -121,6 +123,24 @@ export function CombatLog({ events, currentEventIndex, width }: CombatLogProps) 
         message = `${data.attacker} uses ${data.abilityName}!`;
         colorClass = 'text-cyan-300 font-bold';
         icon = '✨';
+        break;
+
+      case BattleEventType.WaveStart:
+        message = `Wave ${data.waveNumber} of ${data.totalWaves} begins!`;
+        colorClass = 'text-blue-400 font-bold';
+        icon = '🌊';
+        break;
+
+      case BattleEventType.WaveComplete:
+        message = `Wave ${data.waveNumber} completed! ${data.enemiesDefeated || 0} enemies defeated`;
+        colorClass = 'text-green-400 font-bold';
+        icon = '✅';
+        break;
+
+      case BattleEventType.WaveTransition:
+        message = `Transitioning to wave ${data.waveNumber}...`;
+        colorClass = 'text-yellow-400';
+        icon = '➡️';
         break;
 
       default:

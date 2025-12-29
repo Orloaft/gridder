@@ -1,0 +1,982 @@
+# Item System Design Document
+
+## Core Item Philosophy
+
+**Design Goals:**
+- Items feel impactful (clear stat improvements)
+- Rarity correlates with power and complexity
+- Durability creates meaningful risk/reward decisions
+- Equipment choices matter for team composition
+- Active items add tactical depth without overwhelming autobattler simplicity
+
+---
+
+## Item Categories
+
+### 1. Weapons (Offense)
+### 2. Armor (Defense)
+### 3. Accessories (Utility/Special Effects)
+### 4. Consumables (Single-use, active effects)
+
+---
+
+## Item Rarity System
+
+### Rarity Tiers
+
+**Common (Grey)** - 70% drop rate
+- +10-20% single stat increase
+- Simple, straightforward effects
+- 3 durability
+- Examples: Iron Sword, Leather Armor, Health Potion
+
+**Uncommon (Green)** - 20% drop rate
+- +20-35% single stat OR +15% two stats
+- Minor special effect
+- 5 durability
+- Examples: Steel Axe, Chainmail, Regeneration Ring
+
+**Rare (Purple)** - 8% drop rate
+- +35-50% stats OR unique mechanical effect
+- Meaningful special abilities
+- 7 durability
+- Examples: Flaming Greatsword, Plate Armor of Thorns, Vampire Amulet
+
+**Legendary (Gold)** - 2% drop rate
+- +60-100% stats AND powerful unique effect
+- Game-changing abilities
+- 10 durability
+- Examples: Sword of Kings, Dragonscale Armor, Phoenix Pendant
+
+**Mythic (Rainbow)** - 0.1% drop rate (endgame only)
+- +100-150% stats AND multiple unique effects
+- Defines entire build strategies
+- Unbreakable (infinite durability)
+- Examples: Excalibur, Aegis of Eternity, Crown of the Ancients
+
+---
+
+## Equipment Slots & Item Types
+
+### Hero Equipment Layout
+
+```
+Each hero has 4 equipment slots:
+┌─────────────────────┐
+│ [WEAPON]            │ - Affects damage output
+│ [ARMOR]             │ - Affects survivability
+│ [ACCESSORY 1]       │ - Utility/special effects
+│ [ACCESSORY 2]       │ - Utility/special effects
+└─────────────────────┘
+
+Plus inventory (8 slots):
+[Consumable] [Consumable] [Consumable] [Consumable]
+[Extra Gear] [Extra Gear] [Extra Gear] [Extra Gear]
+```
+
+---
+
+## Weapon Designs by Class
+
+### WARRIOR WEAPONS
+
+**Iron Sword** (Common)
+- **Stats:** +10 damage
+- **Durability:** 3
+- **Effect:** None
+- **Visual:** Basic straight sword
+
+**Steel Axe** (Uncommon)
+- **Stats:** +15 damage, +10% attack speed
+- **Durability:** 5
+- **Effect:** 10% chance to deal 2× damage
+- **Visual:** Double-bladed axe
+
+**Flaming Greatsword** (Rare)
+- **Stats:** +25 damage
+- **Durability:** 7
+- **Effect:** Attacks apply "Burning" (5 damage/sec for 3 seconds)
+- **Visual:** Large sword wreathed in flames
+
+**Sword of Kings** (Legendary)
+- **Stats:** +40 damage, +20% attack speed
+- **Durability:** 10
+- **Effect:** Every 5th attack deals 5× damage and stuns target for 1 second
+- **Visual:** Ornate golden blade with runes
+
+**Excalibur** (Mythic)
+- **Stats:** +80 damage, +30% attack speed, +15% crit chance
+- **Durability:** Infinite
+- **Effect:** 
+  - Attacks heal wielder for 20% of damage dealt
+  - Cleaves to hit all adjacent enemies
+  - Cannot be disarmed or destroyed
+- **Visual:** Legendary sword radiating holy light
+
+### ROGUE WEAPONS
+
+**Wooden Bow** (Common)
+- **Stats:** +8 damage, 4 tile range
+- **Durability:** 3
+- **Effect:** None
+
+**Longbow of Precision** (Uncommon)
+- **Stats:** +12 damage, 6 tile range
+- **Durability:** 5
+- **Effect:** +10% accuracy (ignores 10% of enemy evasion)
+
+**Dual Daggers of Venom** (Rare)
+- **Stats:** +20 damage, attacks twice per action
+- **Durability:** 7
+- **Effect:** Attacks apply "Poison" (8 damage/sec for 4 seconds)
+
+**Shadowstrike Blades** (Legendary)
+- **Stats:** +35 damage, +50% crit damage
+- **Durability:** 10
+- **Effect:** Attacks from behind deal triple damage and grant invisibility for 2 seconds
+
+**Artemis' Blessing** (Mythic)
+- **Stats:** +70 damage, 8 tile range, +25% attack speed
+- **Durability:** Infinite
+- **Effect:**
+  - Attacks never miss
+  - Pierce through enemies (hits all in line)
+  - 30% chance to instantly kill enemies below 20% HP
+
+### MAGE WEAPONS
+
+**Apprentice Staff** (Common)
+- **Stats:** +15 spell damage
+- **Durability:** 3
+- **Effect:** None
+
+**Staff of Ice** (Uncommon)
+- **Stats:** +20 spell damage
+- **Durability:** 5
+- **Effect:** Spells slow enemies by 30% for 2 seconds
+
+**Staff of Flames** (Rare)
+- **Stats:** +35 spell damage
+- **Durability:** 7
+- **Effect:** Spells explode in 2-tile radius, dealing 50% damage to nearby enemies
+
+**Archmage's Scepter** (Legendary)
+- **Stats:** +60 spell damage, -20% cooldowns
+- **Durability:** 10
+- **Effect:** Every 3rd spell cast costs no mana and has no cooldown
+
+**Staff of Eternity** (Mythic)
+- **Stats:** +120 spell damage, -40% cooldowns, +30% spell range
+- **Durability:** Infinite
+- **Effect:**
+  - Spells cost no mana
+  - Crits restore 50% of max mana
+  - Casting grants shield equal to 10% max HP
+
+---
+
+## Armor Designs
+
+### LIGHT ARMOR (Rogues, Mages)
+
+**Cloth Robes** (Common)
+- **Stats:** +5 armor
+- **Durability:** 3
+- **Effect:** None
+
+**Leather Armor** (Uncommon)
+- **Stats:** +10 armor, +5% evasion
+- **Durability:** 5
+- **Effect:** None
+
+**Shadowcloak** (Rare)
+- **Stats:** +15 armor, +15% evasion
+- **Durability:** 7
+- **Effect:** When hit, 20% chance to become invisible for 2 seconds
+
+**Robes of the Archmage** (Legendary)
+- **Stats:** +25 armor, +20% spell damage
+- **Durability:** 10
+- **Effect:** Taking damage restores 10 mana
+
+### HEAVY ARMOR (Warriors, Paladins)
+
+**Iron Breastplate** (Common)
+- **Stats:** +15 armor
+- **Durability:** 3
+- **Effect:** None
+
+**Chainmail** (Uncommon)
+- **Stats:** +25 armor, +50 max HP
+- **Durability:** 5
+- **Effect:** Reduces damage from critical hits by 30%
+
+**Plate Armor of Thorns** (Rare)
+- **Stats:** +40 armor, +100 max HP
+- **Durability:** 7
+- **Effect:** Reflects 20% of melee damage back to attacker
+
+**Dragonscale Armor** (Legendary)
+- **Stats:** +70 armor, +200 max HP, +10% all resistances
+- **Durability:** 10
+- **Effect:** 
+  - Immune to fire damage
+  - When HP drops below 30%, gain shield equal to 50% max HP (once per combat)
+
+**Aegis of Eternity** (Mythic)
+- **Stats:** +120 armor, +400 max HP, +25% all resistances
+- **Durability:** Infinite
+- **Effect:**
+  - Damage taken cannot exceed 10% of max HP per hit
+  - Regenerate 2% max HP per second
+  - Immune to crowd control effects
+
+---
+
+## Accessory Designs
+
+### RINGS
+
+**Ring of Strength** (Common)
+- **Stats:** +10 damage
+- **Durability:** 3
+- **Effect:** None
+
+**Ring of Regeneration** (Uncommon)
+- **Stats:** +5 HP per second
+- **Durability:** 5
+- **Effect:** None
+
+**Vampire Ring** (Rare)
+- **Stats:** None
+- **Durability:** 7
+- **Effect:** Lifesteal 15% of damage dealt
+
+**Ring of Haste** (Legendary)
+- **Stats:** +30% attack speed, +30% movement speed
+- **Durability:** 10
+- **Effect:** Cooldowns tick 50% faster
+
+### AMULETS
+
+**Amulet of Protection** (Common)
+- **Stats:** +10 armor
+- **Durability:** 3
+- **Effect:** None
+
+**Amulet of Vitality** (Uncommon)
+- **Stats:** +100 max HP
+- **Durability:** 5
+- **Effect:** Start combat with full HP
+
+**Phoenix Pendant** (Rare)
+- **Stats:** +50 max HP
+- **Durability:** 7
+- **Effect:** Upon death, revive with 30% HP (once per combat)
+
+**Crown of the Ancients** (Legendary)
+- **Stats:** +15% all stats
+- **Durability:** 10
+- **Effect:** Gain random buff every 10 seconds (damage, speed, armor, etc.)
+
+### TRINKETS
+
+**Lucky Coin** (Uncommon)
+- **Stats:** None
+- **Durability:** 5
+- **Effect:** +10% gold from missions, +5% item drop rate
+
+**Berserker Totem** (Rare)
+- **Stats:** None
+- **Durability:** 7
+- **Effect:** Gain +5% damage for every 10% HP missing (max +40% at 20% HP)
+
+**Heartstone** (Legendary)
+- **Stats:** +200 max HP
+- **Durability:** 10
+- **Effect:** Cannot be reduced below 1 HP by a single hit (prevents one-shots)
+
+---
+
+## Consumable Items (Active Use)
+
+### POTIONS
+
+**Health Potion** (Common)
+- **Effect:** Restore 50% max HP instantly
+- **Cooldown:** Can use once per combat
+- **Durability:** Single use (consumed on use)
+- **AI Usage:** When hero HP < 40%
+
+**Mana Potion** (Uncommon)
+- **Effect:** Restore 100% max mana instantly
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When mana < 30% and ability off cooldown
+
+**Elixir of Strength** (Rare)
+- **Effect:** +50% damage for 10 seconds
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When fighting boss OR at start of combat if wave 8+
+
+**Potion of Invulnerability** (Legendary)
+- **Effect:** Immune to all damage for 5 seconds
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When HP < 20%
+
+### SCROLLS
+
+**Scroll of Teleportation** (Uncommon)
+- **Effect:** Teleport to any visible tile instantly
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When surrounded by 3+ enemies OR to reach backline target
+
+**Scroll of Fireball** (Rare)
+- **Effect:** Deal 100 damage in 3-tile radius
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When 3+ enemies are grouped
+
+**Scroll of Resurrection** (Legendary)
+- **Effect:** Revive fainted ally at 50% HP
+- **Cooldown:** Once per mission
+- **Durability:** Single use
+- **AI Usage:** When first hero faints (prioritize most valuable hero)
+
+### GRENADES/BOMBS
+
+**Smoke Bomb** (Common)
+- **Effect:** Create smoke cloud (3×3 area) that grants invisibility for 3 seconds
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When surrounded OR to disengage from losing fight
+
+**Fire Bomb** (Uncommon)
+- **Effect:** Deal 50 damage in 2-tile radius, apply burning (5 damage/sec for 5 seconds)
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When 2+ enemies grouped
+
+**Frost Bomb** (Rare)
+- **Effect:** Deal 40 damage in 3-tile radius, slow by 80% for 4 seconds
+- **Cooldown:** Once per combat
+- **Durability:** Single use
+- **AI Usage:** When facing fast enemies OR need to kite
+
+---
+
+## Item Drop Rates by Wave
+
+### Forest Location (Waves 1-9)
+
+**Wave 1-3 (Tutorial/Safe Farm):**
+- 50% chance: 1 Common item
+- 30% chance: Gold only
+- 20% chance: 1 Common + gold
+
+**Wave 4-6 (Medium Risk):**
+- 40% chance: 1 Common item
+- 30% chance: 1 Uncommon item
+- 20% chance: Gold only
+- 10% chance: 2 Common items
+
+**Wave 7-9 (High Risk):**
+- 30% chance: 1 Uncommon item
+- 25% chance: 1 Common + 1 Uncommon
+- 20% chance: 1 Rare item
+- 15% chance: 2 Uncommon items
+- 10% chance: Gold only
+
+**Boss Wave (Wave 10):**
+- Guaranteed: 1 Rare item
+- 30% chance: Additional Uncommon item
+- 10% chance: Legendary item
+- Always: 50 gems + gold
+
+### Caves Location (Waves 1-12)
+
+**Wave 1-4:**
+- 60% chance: 1 Uncommon item
+- 30% chance: 1 Common item
+- 10% chance: 1 Rare item
+
+**Wave 5-8:**
+- 50% chance: 1 Rare item
+- 30% chance: 1 Uncommon item
+- 15% chance: 2 Uncommon items
+- 5% chance: 1 Legendary item
+
+**Wave 9-12:**
+- 40% chance: 1 Rare item
+- 30% chance: 2 Rare items
+- 20% chance: 1 Legendary item
+- 10% chance: 1 Rare + 1 Legendary
+
+**Boss Wave (Wave 13):**
+- Guaranteed: 1 Legendary item
+- 50% chance: Additional Rare item
+- 20% chance: 2 Legendary items
+- 5% chance: 1 Mythic item
+- Always: 100 gems + gold
+
+### Ruins Location (Waves 1-15)
+
+**Wave 1-5:**
+- 70% chance: 1 Rare item
+- 20% chance: 2 Rare items
+- 10% chance: 1 Legendary item
+
+**Wave 6-10:**
+- 60% chance: 1 Legendary item
+- 30% chance: 1 Rare + 1 Legendary
+- 10% chance: 2 Legendary items
+
+**Wave 11-15:**
+- 50% chance: 2 Legendary items
+- 30% chance: 1 Legendary item
+- 15% chance: 1 Legendary + 1 Mythic
+- 5% chance: 2 Mythic items
+
+**Boss Wave (Wave 16):**
+- Guaranteed: 2 Legendary items
+- 50% chance: 1 Mythic item
+- 20% chance: 2 Mythic items
+- 10% chance: 3 Mythic items
+- Always: 200 gems + gold
+
+---
+
+## Item Balance Formulas
+
+### Stat Budget System
+
+Each rarity has a "stat budget" that defines total power:
+
+**Common:** 100 points
+**Uncommon:** 200 points
+**Rare:** 400 points
+**Legendary:** 800 points
+**Mythic:** 1600 points
+
+**Stat Point Conversions:**
+- +1 damage = 5 points
+- +1 armor = 3 points
+- +10 max HP = 2 points
+- +1% attack speed = 8 points
+- +1% crit chance = 10 points
+- +1% lifesteal = 15 points
+- Special effect = 50-300 points (depending on power)
+
+**Example: Steel Axe (Uncommon - 200 points)**
+- +15 damage = 75 points
+- +10% attack speed = 80 points
+- 10% chance for 2× damage = 45 points
+- **Total: 200 points** ✓
+
+### Durability Cost Scaling
+
+**Repair Costs (at hub/town):**
+- Common: 50g per durability point
+- Uncommon: 150g per durability point
+- Rare: 400g per durability point
+- Legendary: 1000g per durability point
+- Mythic: Cannot break (no repair needed)
+
+**Durability Loss:**
+- Hero faints = -1 durability to ALL equipped items
+- Item breaks at 0 durability = destroyed permanently
+
+**Strategic Implication:**
+- Rare/Legendary gear is powerful but expensive to maintain
+- Players must balance power vs sustainability
+- Common gear is "disposable" but weaker
+
+---
+
+## AI Item Usage System
+
+### Consumable AI Decision Tree
+
+```typescript
+interface ConsumableUsageRules {
+  itemType: string;
+  priority: number; // 1 (highest) to 10 (lowest)
+  conditions: UsageCondition[];
+}
+
+interface UsageCondition {
+  type: "hp_threshold" | "mana_threshold" | "enemy_count" | "wave_number" | "ally_fainted" | "boss_fight";
+  value: number | boolean;
+  comparison: "<" | ">" | "==" | ">=";
+}
+
+const CONSUMABLE_RULES: ConsumableUsageRules[] = [
+  {
+    itemType: "Scroll of Resurrection",
+    priority: 1, // Highest priority
+    conditions: [
+      { type: "ally_fainted", value: true, comparison: "==" },
+    ],
+  },
+  {
+    itemType: "Potion of Invulnerability",
+    priority: 2,
+    conditions: [
+      { type: "hp_threshold", value: 20, comparison: "<" },
+      { type: "boss_fight", value: true, comparison: "==" },
+    ],
+  },
+  {
+    itemType: "Health Potion",
+    priority: 3,
+    conditions: [
+      { type: "hp_threshold", value: 40, comparison: "<" },
+    ],
+  },
+  {
+    itemType: "Elixir of Strength",
+    priority: 4,
+    conditions: [
+      { type: "boss_fight", value: true, comparison: "==" },
+      // OR
+      { type: "wave_number", value: 8, comparison: ">=" },
+    ],
+  },
+  {
+    itemType: "Mana Potion",
+    priority: 5,
+    conditions: [
+      { type: "mana_threshold", value: 30, comparison: "<" },
+    ],
+  },
+  {
+    itemType: "Scroll of Fireball",
+    priority: 6,
+    conditions: [
+      { type: "enemy_count", value: 3, comparison: ">=" },
+    ],
+  },
+  {
+    itemType: "Frost Bomb",
+    priority: 7,
+    conditions: [
+      { type: "enemy_count", value: 2, comparison: ">=" },
+    ],
+  },
+  {
+    itemType: "Smoke Bomb",
+    priority: 8,
+    conditions: [
+      { type: "hp_threshold", value: 30, comparison: "<" },
+      { type: "enemy_count", value: 3, comparison: ">=" },
+    ],
+  },
+];
+```
+
+### Consumable System Implementation
+
+```typescript
+class ConsumableSystem extends System {
+  update(world: World, deltaTime: number): void {
+    const heroesWithInventory = world.query(
+      ComponentType.Inventory,
+      ComponentType.Health,
+      ComponentType.AI
+    );
+    
+    heroesWithInventory.forEach(heroId => {
+      const inventory = world.getComponent<InventoryComponent>(heroId, ComponentType.Inventory);
+      const health = world.getComponent<HealthComponent>(heroId, ComponentType.Health);
+      const ai = world.getComponent<AIComponent>(heroId, ComponentType.AI);
+      
+      if (!inventory || !health || !ai) return;
+      
+      // Only consider using consumables in combat
+      if (ai.state === AIState.Idle) return;
+      
+      // Check consumables by priority
+      const sortedConsumables = this.getSortedConsumables(inventory);
+      
+      for (const consumable of sortedConsumables) {
+        if (this.shouldUseConsumable(world, heroId, consumable)) {
+          this.useConsumable(world, heroId, consumable);
+          break; // Only use one consumable per tick
+        }
+      }
+    });
+  }
+  
+  private getSortedConsumables(inventory: InventoryComponent): ConsumableItem[] {
+    return inventory.consumables
+      .filter(item => !item.used)
+      .sort((a, b) => {
+        const ruleA = CONSUMABLE_RULES.find(r => r.itemType === a.type);
+        const ruleB = CONSUMABLE_RULES.find(r => r.itemType === b.type);
+        return (ruleA?.priority || 10) - (ruleB?.priority || 10);
+      });
+  }
+  
+  private shouldUseConsumable(
+    world: World,
+    heroId: EntityId,
+    consumable: ConsumableItem
+  ): boolean {
+    const rule = CONSUMABLE_RULES.find(r => r.itemType === consumable.type);
+    if (!rule) return false;
+    
+    // Check all conditions (AND logic)
+    return rule.conditions.every(condition => {
+      return this.checkCondition(world, heroId, condition);
+    });
+  }
+  
+  private checkCondition(
+    world: World,
+    heroId: EntityId,
+    condition: UsageCondition
+  ): boolean {
+    switch (condition.type) {
+      case "hp_threshold": {
+        const health = world.getComponent<HealthComponent>(heroId, ComponentType.Health);
+        if (!health) return false;
+        const hpPercent = (health.current / health.max) * 100;
+        return this.compare(hpPercent, condition.value as number, condition.comparison);
+      }
+      
+      case "mana_threshold": {
+        const mana = world.getComponent<ManaComponent>(heroId, ComponentType.Mana);
+        if (!mana) return false;
+        const manaPercent = (mana.current / mana.max) * 100;
+        return this.compare(manaPercent, condition.value as number, condition.comparison);
+      }
+      
+      case "enemy_count": {
+        const transform = world.getComponent<TransformComponent>(heroId, ComponentType.Transform);
+        if (!transform) return false;
+        const nearbyEnemies = this.countNearbyEnemies(world, heroId, transform, 5); // 5 tile radius
+        return this.compare(nearbyEnemies, condition.value as number, condition.comparison);
+      }
+      
+      case "wave_number": {
+        const waveNumber = world.getCurrentWave();
+        return this.compare(waveNumber, condition.value as number, condition.comparison);
+      }
+      
+      case "ally_fainted": {
+        const faintedAllies = this.countFaintedAllies(world, heroId);
+        return faintedAllies > 0;
+      }
+      
+      case "boss_fight": {
+        return world.isBossFight();
+      }
+      
+      default:
+        return false;
+    }
+  }
+  
+  private compare(a: number, b: number, op: string): boolean {
+    switch (op) {
+      case "<": return a < b;
+      case ">": return a > b;
+      case "==": return a === b;
+      case ">=": return a >= b;
+      default: return false;
+    }
+  }
+  
+  private useConsumable(
+    world: World,
+    heroId: EntityId,
+    consumable: ConsumableItem
+  ): void {
+    console.log(`Hero ${heroId} used ${consumable.type}`);
+    
+    // Execute consumable effect
+    consumable.effect(heroId, world);
+    
+    // Mark as used
+    consumable.used = true;
+    
+    // Remove from inventory
+    const inventory = world.getComponent<InventoryComponent>(heroId, ComponentType.Inventory);
+    if (inventory) {
+      inventory.consumables = inventory.consumables.filter(c => c !== consumable);
+    }
+  }
+  
+  private countNearbyEnemies(
+    world: World,
+    heroId: EntityId,
+    transform: TransformComponent,
+    radius: number
+  ): number {
+    const enemies = world.query(ComponentType.Health, ComponentType.Transform)
+      .filter(id => id !== heroId); // Simplified: assumes non-heroes are enemies
+    
+    let count = 0;
+    const heroPos = getGridPosition(transform);
+    
+    enemies.forEach(enemyId => {
+      const enemyTransform = world.getComponent<TransformComponent>(enemyId, ComponentType.Transform);
+      if (!enemyTransform) return;
+      
+      const enemyPos = getGridPosition(enemyTransform);
+      const distance = Math.abs(heroPos.x - enemyPos.x) + Math.abs(heroPos.y - enemyPos.y);
+      
+      if (distance <= radius) count++;
+    });
+    
+    return count;
+  }
+  
+  private countFaintedAllies(world: World, heroId: EntityId): number {
+    // TODO: Implement faction/team system
+    // For now, simplified implementation
+    return 0;
+  }
+}
+
+interface ConsumableItem {
+  type: string;
+  effect: (userId: EntityId, world: World) => void;
+  used: boolean;
+}
+
+interface InventoryComponent {
+  type: ComponentType.Inventory;
+  equipment: {
+    weapon: Item | null;
+    armor: Item | null;
+    accessory1: Item | null;
+    accessory2: Item | null;
+  };
+  consumables: ConsumableItem[];
+  storage: Item[]; // Unequipped items
+}
+```
+
+---
+
+## Equipment Loadout Strategy
+
+### AI Equipment Decision System
+
+**When to equip items (between missions):**
+
+```typescript
+class EquipmentOptimizer {
+  // Called after mission complete, before next mission
+  optimizeLoadout(heroId: EntityId, world: World): void {
+    const hero = world.getEntity(heroId);
+    const inventory = world.getComponent<InventoryComponent>(heroId, ComponentType.Inventory);
+    
+    if (!inventory) return;
+    
+    // Prioritize equipment by hero role
+    const heroClass = this.getHeroClass(hero);
+    
+    switch (heroClass) {
+      case "Tank":
+        this.equipForTank(heroId, inventory, world);
+        break;
+      case "DPS":
+        this.equipForDPS(heroId, inventory, world);
+        break;
+      case "Support":
+        this.equipForSupport(heroId, inventory, world);
+        break;
+      case "Ranged":
+        this.equipForRanged(heroId, inventory, world);
+        break;
+    }
+  }
+  
+  private equipForTank(heroId: EntityId, inventory: InventoryComponent, world: World): void {
+    // Priority: Armor > HP accessories > Damage
+    
+    // Find best armor
+    const bestArmor = this.findBestItem(
+      inventory.storage.filter(i => i.category === "Armor"),
+      (item) => item.stats.armor + (item.stats.maxHP / 10)
+    );
+    
+    if (bestArmor && this.isBetterThan(bestArmor, inventory.equipment.armor)) {
+      this.swapEquipment(inventory, "armor", bestArmor);
+    }
+    
+    // Find best weapon (prefer lifesteal/defensive)
+    const bestWeapon = this.findBestItem(
+      inventory.storage.filter(i => i.category === "Weapon"),
+      (item) => item.stats.damage + (item.specialEffect?.includes("lifesteal") ? 100 : 0)
+    );
+    
+    if (bestWeapon && this.isBetterThan(bestWeapon, inventory.equipment.weapon)) {
+      this.swapEquipment(inventory, "weapon", bestWeapon);
+    }
+    
+    // Accessories: HP/regen/armor
+    this.equipBestAccessories(inventory, ["maxHP", "armor", "regen"]);
+  }
+  
+  private equipForDPS(heroId: EntityId, inventory: InventoryComponent, world: World): void {
+    // Priority: Damage > Attack Speed > Crit
+    
+    const bestWeapon = this.findBestItem(
+      inventory.storage.filter(i => i.category === "Weapon"),
+      (item) => item.stats.damage * (1 + item.stats.attackSpeed / 100) * (1 + item.stats.critChance / 100)
+    );
+    
+    if (bestWeapon && this.isBetterThan(bestWeapon, inventory.equipment.weapon)) {
+      this.swapEquipment(inventory, "weapon", bestWeapon);
+    }
+    
+    // Armor: Balance defense with offense
+    const bestArmor = this.findBestItem(
+      inventory.storage.filter(i => i.category === "Armor"),
+      (item) => item.stats.armor + item.stats.damage
+    );
+    
+    if (bestArmor && this.isBetterThan(bestArmor, inventory.equipment.armor)) {
+      this.swapEquipment(inventory, "armor", bestArmor);
+    }
+    
+    // Accessories: Damage/crit/speed
+    this.equipBestAccessories(inventory, ["damage", "attackSpeed", "critChance"]);
+  }
+  
+  private findBestItem(items: Item[], scoringFunc: (item: Item) => number): Item | null {
+    if (items.length === 0) return null;
+    
+    return items.reduce((best, current) => {
+      return scoringFunc(current) > scoringFunc(best) ? current : best;
+    });
+  }
+  
+  private isBetterThan(newItem: Item, currentItem: Item | null): boolean {
+    if (!currentItem) return true;
+    
+    // Check durability - don't equip broken items
+    if (newItem.durability <= 0) return false;
+    
+    // Prefer higher rarity
+    if (newItem.rarity > currentItem.rarity) return true;
+    if (newItem.rarity < currentItem.rarity) return false;
+    
+    // Same rarity: compare stats (simplified)
+    return this.getTotalStatValue(newItem) > this.getTotalStatValue(currentItem);
+  }
+  
+  private getTotalStatValue(item: Item): number {
+    let total = 0;
+    total += item.stats.damage || 0;
+    total += (item.stats.armor || 0) * 0.5;
+    total += (item.stats.maxHP || 0) * 0.1;
+    total += (item.stats.attackSpeed || 0) * 2;
+    // ... etc for all stats
+    return total;
+  }
+}
+```
+
+---
+
+## Drop Rate Tuning by Location
+
+### Expected Items Per Run
+
+**Forest (10 waves):**
+- Safe farm (Wave 1-3): ~1 Common per run
+- Full clear (Wave 1-10): ~3-4 Common, ~2 Uncommon, ~1 Rare, 10% chance Legendary
+
+**Caves (13 waves):**
+- Safe farm (Wave 1-4): ~2 Uncommon per run
+- Full clear (Wave 1-13): ~1 Common, ~4 Uncommon, ~2-3 Rare, ~1 Legendary
+
+**Ruins (16 waves):**
+- Safe farm (Wave 1-5): ~3 Rare per run
+- Full clear (Wave 1-16): ~5 Rare, ~3-4 Legendary, ~10% Mythic
+
+### Item Acquisition Timeline (Typical Player)
+
+**Week 1 (Forest farming):**
+- Full set of Common gear (4 slots × 3 heroes = 12 items)
+- 3-5 Uncommon items
+- 1-2 Rare items
+- 0 Legendary
+
+**Week 2 (Caves progression):**
+- Upgrading to Uncommon gear
+- 5-10 Rare items collected
+- First Legendary acquired
+
+**Week 3-4 (Ruins attempts):**
+- Full Rare gear loadouts
+- 3-5 Legendary items
+- Chasing Mythics
+
+---
+
+## Item Selling System
+
+**Sell Prices (to vendor):**
+- Common: 50g
+- Uncommon: 200g
+- Rare: 800g
+- Legendary: 3000g
+- Mythic: Cannot sell (too valuable)
+
+**Strategic Decisions:**
+- Sell excess Common gear to fund repairs
+- Keep at least 1 backup set of gear
+- Rare+ items almost always worth keeping
+
+---
+
+## Item Crafting (Optional Future System)
+
+**Recipe Example:**
+```
+Flaming Greatsword = Steel Sword (Uncommon) + Fire Gem (Rare) + 1000g
+```
+
+Allows players to target specific builds without pure RNG.
+
+---
+
+## Summary: Item System Balance
+
+**Drop Rates:**
+- Common: 70% (abundant, disposable)
+- Uncommon: 20% (solid upgrades)
+- Rare: 8% (exciting finds)
+- Legendary: 2% (chase items)
+- Mythic: 0.1% (endgame prestige)
+
+**Durability:**
+- Creates risk/reward (use powerful items vs save for boss)
+- Repair costs incentivize farming
+- Mythic immunity = ultimate goal
+
+**AI Usage:**
+- Consumables used tactically (HP thresholds, enemy counts)
+- Equipment auto-optimized between missions
+- Priority system prevents waste
+
+**Progression Feel:**
+- Early: Constant Common upgrades (rapid progress)
+- Mid: Hunting Rare items (targeted farming)
+- Late: Legendary/Mythic chase (long-term goals)
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** December 2025  
+**Contributors:** Alex (Design Lead), Claude (Systems Design)
+
+**Status:** Comprehensive Item System - Ready for Implementation

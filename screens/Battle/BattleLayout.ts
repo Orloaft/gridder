@@ -30,7 +30,10 @@ export function createBattleLayout(
     winner: battleState.winner,
     isVictory,
     isWaveTransition,
-    currentEventType: currentEvent?.type
+    currentEventType: currentEvent?.type,
+    firstEvents: battleState.events.slice(0, 3).map(e => e.type),
+    currentWave: battleState.currentWave,
+    totalWaves: battleState.totalWaves
   });
 
   // WAVE TRANSITION SCREEN - Show decision UI between waves
@@ -42,24 +45,33 @@ export function createBattleLayout(
       const waveData = currentEvent.data;
       const nextWaveIsBoss = waveData.nextWaveNumber === waveData.totalWaves;
 
-      // Title - Wave Complete
+      // Title - Wave Group Complete
+      const isAfterWaveGroup = waveData.waveNumber % 3 === 0;
+      const waveGroupNum = Math.ceil(waveData.waveNumber / 3);
+      const totalWaveGroups = Math.ceil((waveData.totalWaves - 1) / 3); // -1 because boss is separate
+
       occupants.push({
         id: 'wave-complete-title',
         type: GridOccupantType.Decoration,
         position: { row: 1, col: 3 },
-        text: `Wave ${waveData.waveNumber} Complete!`,
+        text: isAfterWaveGroup
+          ? `Wave Group ${waveGroupNum} Complete!`
+          : `Waves ${waveData.waveNumber - 2}-${waveData.waveNumber} Complete!`,
         style: 'title',
         animationDelay: 0.1,
       });
 
-      // Next wave warning
+      // Next wave warning - show upcoming wave group or boss
+      const nextWaveGroup = Math.ceil(waveData.nextWaveNumber / 3);
+      const wavesInNextGroup = nextWaveIsBoss ? 1 : Math.min(3, waveData.totalWaves - waveData.nextWaveNumber);
+
       occupants.push({
         id: 'next-wave-info',
         type: GridOccupantType.Decoration,
         position: { row: 2, col: 2 },
         text: nextWaveIsBoss
-          ? `Next: 💀 BOSS WAVE ${waveData.nextWaveNumber}/${waveData.totalWaves} 💀`
-          : `Next: Wave ${waveData.nextWaveNumber}/${waveData.totalWaves}`,
+          ? `Next: 💀 BOSS WAVE 💀`
+          : `Next: Waves ${waveData.nextWaveNumber}-${Math.min(waveData.nextWaveNumber + 2, waveData.totalWaves - 1)} (Group ${nextWaveGroup}/${totalWaveGroups})`,
         style: 'subtitle',
         animationDelay: 0.3,
       });
@@ -125,6 +137,7 @@ export function createBattleLayout(
         label: 'Retreat',
         icon: '←',
         variant: 'secondary',
+        description: `Retreat from battle with reduced rewards (50% gold, minus medical costs for ${faintedCount} fainted ${faintedCount === 1 ? 'hero' : 'heroes'})`,
         onClick: () => {
           const gameState = useGameStore.getState();
           if (gameState.retreatFromBattle) {
@@ -142,6 +155,9 @@ export function createBattleLayout(
         label: nextWaveIsBoss ? 'Face Boss' : 'Continue',
         icon: '→',
         variant: 'primary',
+        description: nextWaveIsBoss
+          ? 'Continue to the final boss wave - defeat it for full rewards and bonus gems!'
+          : 'Continue to the next wave of enemies',
         onClick: () => {
           // Resume battle by advancing to next event
           onNextEvent();
@@ -154,7 +170,26 @@ export function createBattleLayout(
   }
 
   // NORMAL BATTLE UI - Show during active combat
-  // Row 0: Speed button, Boss Wave indicator, and Retreat button
+  // Row 0: Wave progress, Speed button
+
+  // Wave progress indicator
+  if (!battleFinished) {
+    const waveGroupNum = Math.ceil(battleState.currentWave / 3);
+    const totalWaveGroups = Math.ceil((battleState.totalWaves - 1) / 3);
+    const isBossWave = battleState.currentWave === battleState.totalWaves;
+
+    occupants.push({
+      id: 'wave-progress',
+      type: GridOccupantType.Decoration,
+      position: { row: 0, col: 0 },
+      text: isBossWave
+        ? '💀 BOSS WAVE 💀'
+        : `Wave ${battleState.currentWave}/${battleState.totalWaves - 1} (Group ${waveGroupNum}/${totalWaveGroups})`,
+      style: 'subtitle',
+      animationDelay: 0.05,
+    });
+  }
+
   occupants.push({
     id: 'btn-speed',
     type: GridOccupantType.Button,
@@ -162,28 +197,26 @@ export function createBattleLayout(
     label: `${battleSpeed}x`,
     icon: '⚡',
     variant: 'secondary',
+    description: 'Toggle battle speed between 1x, 2x, and 4x to watch combat faster or slower',
     onClick: onToggleSpeed,
     animationDelay: 0.1,
   });
 
-  // Boss Wave indicator - show during last wave
-  if (!battleFinished && battleState.currentWave === battleState.totalWaves) {
-    occupants.push({
-      id: 'boss-wave-indicator',
-      type: GridOccupantType.Decoration,
-      position: { row: 0, col: 3 },
-      text: 'BOSS WAVE',
-      icon: '💀',
-      style: 'title',
-      animationDelay: 0.2,
-    });
-  }
-
   // Note: Retreat button removed - retreat decisions are now made during wave transitions
 
   // Heroes - use their current positions from battle state
-  battleState.heroes.forEach((hero) => {
+  battleState.heroes.forEach((hero, index) => {
     if (!hero.isAlive) return; // Don't render dead units
+
+    // Debug first hero position
+    if (index === 0 && currentEventIndex < 5) {
+      console.log(`[BattleLayout] Creating hero occupant:`, {
+        name: hero.name,
+        id: hero.id,
+        originalPosition: hero.position,
+        occupantPosition: hero.position
+      });
+    }
 
     occupants.push({
       id: `hero-${hero.id}`,
@@ -411,6 +444,7 @@ export function createBattleLayout(
         label: 'Continue',
         icon: '→',
         variant: 'primary',
+        description: 'Collect your battle rewards and return to the location map to select your next mission',
         onClick: () => {
           // Mission completed - return to location map
           useGameStore.setState({

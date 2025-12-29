@@ -37,6 +37,7 @@ export function createPreBattleLayout(
     label: 'Back',
     icon: generateButtonIcon('back'),
     variant: 'secondary',
+    description: 'Return to the location map without starting battle',
     onClick: () => navigate(ScreenType.LocationMap),
     animationDelay: 0.1,
   });
@@ -127,6 +128,17 @@ export function createPreBattleLayout(
     animationDelay: 0.5,
   });
 
+  // Add team size info panel
+  occupants.push({
+    id: 'team-size-info',
+    type: GridOccupantType.StatusPanel,
+    position: { row: 4, col: 2 },
+    title: 'Max Team Size',
+    content: `${stage.playerSlots} Heroes`,
+    variant: filledSlots < stage.playerSlots ? 'warning' : 'success',
+    animationDelay: 0.52,
+  });
+
   // Row 5: Team slots (empty or filled) - now with drag-and-drop
   for (let i = 0; i < stage.playerSlots; i++) {
     const heroId = preBattleTeam[i];
@@ -139,14 +151,14 @@ export function createPreBattleLayout(
     });
 
     if (hero && heroId) {
-      // Show hero card (draggable)
+      // Show hero card (draggable) - Always show full health in pre-battle
       occupants.push({
         id: `team-slot-${i}`,
         type: GridOccupantType.Hero,
         position: { row: 5, col: i },
         name: hero.name,
         spritePath: hero.spritePath,
-        hp: hero.currentStats.hp,
+        hp: hero.currentStats.maxHp, // Always show full HP in pre-battle
         maxHp: hero.currentStats.maxHp,
         level: hero.level,
         heroClass: hero.class,
@@ -197,6 +209,7 @@ export function createPreBattleLayout(
         label: 'Drop Here',
         icon: '➕',
         variant: 'secondary',
+        description: 'Drag and drop a hero from the available heroes below to add them to your team',
         disabled: false,
         onClick: () => {},
         animationDelay: 0.55 + i * 0.05,
@@ -253,7 +266,7 @@ export function createPreBattleLayout(
         position: { row: 7, col: index },
         name: hero.name,
         spritePath: hero.spritePath,
-        hp: hero.currentStats.hp,
+        hp: hero.currentStats.maxHp, // Always show full HP in pre-battle
         maxHp: hero.currentStats.maxHp,
         level: hero.level,
         heroClass: hero.class,
@@ -279,6 +292,7 @@ export function createPreBattleLayout(
       label: 'Start Battle',
       icon: ICON_PATHS.sword,
       variant: 'danger',
+      description: `Begin combat with your team against the enemies shown above. ${filledSlots} ${filledSlots === 1 ? 'hero' : 'heroes'} ready for battle.`,
       onClick: onReady,
       animationDelay: 0.9,
     });

@@ -1,11 +1,14 @@
 import { Hero, Enemy, UnitStats, StatusEffect, StatusEffectType, Ability, AbilityType } from '@/types/core.types';
 import { GridPosition } from '@/types/grid.types';
 import { GridManager } from './GridManager';
+import { PositionManager } from './PositionManager';
+import { AnimationCoordinator } from './AnimationCoordinator';
 
 // Battle event types
 export enum BattleEventType {
   BattleStart = 'battleStart',
   WaveComplete = 'waveComplete', // Wave completed - pause for player decision
+  WaveTransition = 'waveTransition', // Smooth transition animation between waves
   WaveStart = 'waveStart', // New wave of enemies entering
   Tick = 'tick', // Replaces TurnStart - fires each tick with cooldown updates
   Move = 'move',
@@ -65,11 +68,17 @@ export interface BattleState {
  */
 export class BattleSimulator {
   private state: BattleState;
-  private gridManager: GridManager; // Single source of truth for grid occupancy
+  private gridManager: GridManager;
+  private positionManager: PositionManager;
+  private animationCoordinator: AnimationCoordinator;
 
   constructor(heroes: Hero[], enemies: Enemy[] | Enemy[][]) {
-    // Initialize grid manager (8x8 grid)
+    // Initialize grid manager (8x8 grid) - keeping for backwards compatibility
     this.gridManager = new GridManager(8, 8);
+
+    // Initialize new position management system
+    this.positionManager = new PositionManager(8, 8);
+    this.animationCoordinator = new AnimationCoordinator(this.positionManager);
 
     // Check if enemies is a wave array (array of arrays) or single wave
     // Multi-wave format: enemies[0] is an array (Enemy[])
@@ -133,13 +142,19 @@ export class BattleSimulator {
         ? Math.max(...h.abilities.map(a => a.range || 1))
         : 1;
 
+      // Start with full health at beginning of battle
+      const fullHealthStats = {
+        ...h.currentStats,
+        hp: h.currentStats.maxHp  // Always start at full health
+      };
+
       return {
         id: h.instanceId,
         name: h.name,
         class: h.class,
         spritePath: h.spritePath,
-        baseStats: { ...h.currentStats },
-        stats: { ...h.currentStats },
+        baseStats: { ...fullHealthStats },
+        stats: { ...fullHealthStats },
         statusEffects: [],
         isHero: true,
         isAlive: true,
@@ -186,20 +201,24 @@ export class BattleSimulator {
       };
     });
 
-    // Register all units with GridManager
+    // Register all units with both GridManager (legacy) and PositionManager (new)
     const allUnits = [...heroUnits, ...enemyUnits];
     allUnits.forEach(unit => {
-      const occupied = this.gridManager.occupy(unit.position, unit.id);
-      if (!occupied) {
-        console.error(`[BattleSimulator] Failed to occupy position for unit ${unit.name} at`, unit.position);
-        // Find nearest empty tile as fallback
-        const nearestEmpty = this.gridManager.findNearestEmptyTile(unit.position);
+      // Try to initialize in PositionManager first
+      if (!this.positionManager.initializeUnit(unit.id, unit.position)) {
+        // If position is occupied, find nearest empty
+        const nearestEmpty = this.findNearestEmptyPosition(unit.position);
         if (nearestEmpty) {
           console.log(`[BattleSimulator] Moving ${unit.name} to nearest empty tile:`, nearestEmpty);
           unit.position = nearestEmpty;
-          this.gridManager.occupy(nearestEmpty, unit.id);
+          this.positionManager.initializeUnit(unit.id, nearestEmpty);
+        } else {
+          console.error(`[BattleSimulator] Failed to place unit ${unit.name}`);
         }
       }
+
+      // Also update legacy GridManager for compatibility
+      this.gridManager.occupy(unit.position, unit.id);
     });
 
     this.state = {
@@ -273,30 +292,53 @@ export class BattleSimulator {
 
 
   /**
-   * Move unit closer to target, avoiding occupied spaces
-   * Uses GridManager for collision-aware pathfinding
+   * Find nearest empty position using PositionManager
    */
-  private moveTowards(unit: BattleUnit, target: BattleUnit): void {
+  private findNearestEmptyPosition(position: GridPosition, maxRadius: number = 5): GridPosition | null {
+    // Check center first
+    if (!this.positionManager.isOccupied(position)) {
+      return position;
+    }
+
+    // Spiral search outward
+    for (let radius = 1; radius <= maxRadius; radius++) {
+      for (let dRow = -radius; dRow <= radius; dRow++) {
+        for (let dCol = -radius; dCol <= radius; dCol++) {
+          if (Math.abs(dRow) !== radius && Math.abs(dCol) !== radius) {
+            continue;
+          }
+
+          const checkPos: GridPosition = {
+            row: position.row + dRow,
+            col: position.col + dCol,
+          };
+
+          if (checkPos.row >= 0 && checkPos.row < 8 &&
+              checkPos.col >= 0 && checkPos.col < 8 &&
+              !this.positionManager.isOccupied(checkPos)) {
+            return checkPos;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Move unit closer to target, avoiding occupied spaces
+   * Now uses PositionManager for atomic, transactional movements
+   * @param reservedPositions - Set of positions already reserved this tick
+   */
+  private moveTowards(unit: BattleUnit, target: BattleUnit, reservedPositions?: Set<string>): void {
     const oldPosition = { ...unit.position };
+    const currentDist = this.getDistance(unit.position, target.position);
 
     // Get all valid adjacent positions (8-directional)
     const allPossibleMoves = this.gridManager.getAdjacentPositionsWithDiagonals(unit.position);
 
-    // Filter to walkable positions only (GridManager checks bounds and occupancy)
-    const validMoves = allPossibleMoves.filter(pos => this.gridManager.isWalkable(pos, unit.id));
-
-    if (validMoves.length === 0) {
-      // No valid moves, unit is completely blocked
-      return;
-    }
-
-    const currentDist = this.getDistance(unit.position, target.position);
-
-    // Score each valid move based on:
-    // 1. Distance to target (primary factor)
-    // 2. Whether it moves us closer (bonus)
-    // 3. Alignment with target direction (bonus for moving in the right general direction)
-    const scoredMoves = validMoves.map(move => {
+    // Score each potential move first (before checking if walkable)
+    const potentialMoves = allPossibleMoves.map(move => {
       const distToTarget = this.getDistance(move, target.position);
       const getsCloser = distToTarget < currentDist;
 
@@ -319,35 +361,83 @@ export class BattleSimulator {
     });
 
     // Sort by score (lower is better)
-    scoredMoves.sort((a, b) => a.score - b.score);
-    const bestMove = scoredMoves[0].move;
-    const newDist = scoredMoves[0].distToTarget;
+    potentialMoves.sort((a, b) => a.score - b.score);
 
-    // Move if:
-    // 1. We get closer, OR
-    // 2. We maintain distance but move towards target (allows sideways movement around obstacles)
-    // 3. As last resort, move even if we get slightly farther (max +1 distance) to escape dead ends
-    const distIncrease = newDist - currentDist;
-    const shouldMove = distIncrease <= 1; // Allow moving up to 1 step farther to navigate around obstacles
+    // Try moves in order of preference using the new transactional system
+    for (const potentialMove of potentialMoves) {
+      const { move, distToTarget } = potentialMove;
 
-    if (shouldMove) {
-      // Attempt atomic move through GridManager
-      const moveSuccess = this.gridManager.move(unit.id, oldPosition, bestMove);
+      // Check if this specific move would get us stuck
+      const distIncrease = distToTarget - currentDist;
+      if (distIncrease > 1) {
+        continue;
+      }
 
-      if (moveSuccess) {
-        // Update unit's actual position
-        unit.position = bestMove;
+      // Check if position is reserved this tick
+      const moveKey = `${move.row},${move.col}`;
+      if (reservedPositions && reservedPositions.has(moveKey)) {
+        console.log(`[moveTowards] ${unit.name} blocked from (${move.row},${move.col}) - reserved this tick`);
+        continue; // Try next move option
+      }
 
-        // Add movement event
+      // CRITICAL: Check BOTH managers before moving to prevent desync
+      const pmOccupant = this.positionManager.getOccupant(move);
+      const gmOccupant = this.gridManager.getOccupant(move);
+
+      if (pmOccupant && pmOccupant !== unit.id) {
+        console.log(`[moveTowards] ${unit.name} blocked by PositionManager: ${pmOccupant} at (${move.row},${move.col})`);
+        continue;
+      }
+
+      if (gmOccupant && gmOccupant !== unit.id) {
+        console.log(`[moveTowards] ${unit.name} blocked by GridManager: ${gmOccupant} at (${move.row},${move.col})`);
+        continue;
+      }
+
+      // Try to move using PositionManager's atomic move method
+      if (this.positionManager.moveUnit(unit.id, move)) {
+        // Reserve this position for the rest of this tick
+        if (reservedPositions) {
+          reservedPositions.add(moveKey);
+        }
+
+        // Update GridManager atomically
+        if (!this.gridManager.move(unit.id, oldPosition, move)) {
+          // GridManager failed - rollback PositionManager
+          console.error(`[moveTowards] GridManager move failed, rolling back PositionManager`);
+          this.positionManager.moveUnit(unit.id, oldPosition);
+          continue;
+        }
+
+        // Update unit's position
+        unit.position = move;
+
+        // Add movement event (animation will be handled by event processor)
         this.addEvent(BattleEventType.Move, {
           unit: unit.name,
           unitId: unit.id,
           from: oldPosition,
-          to: { ...unit.position },
+          to: move,
         });
+
+        console.log(`[moveTowards] ${unit.name} moves from (${oldPosition.row},${oldPosition.col}) to (${move.row},${move.col})`);
+        return;
+      } else {
+        // Move rejected - check why
+        const occupant = this.positionManager.getOccupant(move);
+        if (occupant && occupant !== unit.id) {
+          // Find who is occupying
+          const occupyingUnit = [...this.state.heroes, ...this.state.enemies].find(u => u.id === occupant);
+          if (occupyingUnit) {
+            console.log(`[moveTowards] ${unit.name} blocked from (${move.row},${move.col}) by ${occupyingUnit.name}`);
+          }
+        }
       }
-      // If move failed, unit stays in place (tile became occupied between checks)
+      // If move was rejected, try next option
     }
+
+    // No valid moves found
+    console.log(`[moveTowards] ${unit.name} at (${oldPosition.row},${oldPosition.col}) has no valid moves`);
   }
 
   /**
@@ -374,7 +464,8 @@ export class BattleSimulator {
           // Check for death from DoT
           if (unit.stats.hp <= 0) {
             unit.isAlive = false;
-            // Vacate grid position in GridManager
+            // Remove from both position managers
+            this.positionManager.removeUnit(unit.id);
             this.gridManager.vacate(unit.position);
             this.addEvent(BattleEventType.Death, {
               unit: unit.name,
@@ -770,7 +861,8 @@ export class BattleSimulator {
           // Check for death
           if (target.stats.hp <= 0) {
             target.isAlive = false;
-            // Vacate grid position in GridManager
+            // Remove from both position managers
+            this.positionManager.removeUnit(target.id);
             this.gridManager.vacate(target.position);
             this.addEvent(BattleEventType.Death, {
               unit: target.name,
@@ -933,11 +1025,47 @@ export class BattleSimulator {
   }
 
   /**
+   * Verify that PositionManager and GridManager are in sync
+   */
+  private verifyPositionSync(): void {
+    const issues: string[] = [];
+
+    // Check all units
+    const allUnits = [...this.state.heroes, ...this.state.enemies].filter(u => u.isAlive);
+
+    for (const unit of allUnits) {
+      const pmPos = this.positionManager.getLogicalPosition(unit.id);
+      const gmOccupant = this.gridManager.getOccupant(unit.position);
+
+      // Check if unit exists in PositionManager
+      if (!pmPos) {
+        issues.push(`Unit ${unit.name} (${unit.id}) not in PositionManager but is at (${unit.position.row},${unit.position.col})`);
+      } else if (pmPos.row !== unit.position.row || pmPos.col !== unit.position.col) {
+        issues.push(`Unit ${unit.name} position mismatch: BattleUnit=(${unit.position.row},${unit.position.col}) PM=(${pmPos.row},${pmPos.col})`);
+      }
+
+      // Check if GridManager has correct occupant
+      if (gmOccupant !== unit.id) {
+        issues.push(`GridManager mismatch at (${unit.position.row},${unit.position.col}): expected ${unit.id}, found ${gmOccupant}`);
+      }
+    }
+
+    if (issues.length > 0) {
+      console.error('[BattleSimulator] Position sync issues detected:', issues);
+    }
+  }
+
+  /**
    * Process one tick of combat
    * Advances all unit cooldowns and triggers actions for units at 100%
    */
   private processTick(): void {
     this.state.tick++;
+
+    // Verify position sync every 5 ticks
+    if (this.state.tick % 5 === 0) {
+      this.verifyPositionSync();
+    }
 
     // Process status effects first (DoT, expiration, etc.)
     this.processStatusEffects();
@@ -984,6 +1112,18 @@ export class BattleSimulator {
 
     // Sort by highest cooldown first (in case multiple units are ready)
     readyUnits.sort((a, b) => b.cooldown - a.cooldown);
+
+    // Verify grid consistency before processing actions (debug)
+    if (this.state.tick % 10 === 0) { // Check every 10 ticks
+      const allUnitsForCheck = [...this.state.heroes, ...this.state.enemies];
+      const issues = this.gridManager.verifyConsistency(allUnitsForCheck);
+      if (issues.length > 0) {
+        console.error('[BattleSimulator] Grid consistency issues found:', issues);
+      }
+    }
+
+    // Track positions reserved this tick to prevent multiple units moving to same space
+    const reservedPositions = new Set<string>();
 
     // Process each ready unit's action
     for (const attacker of readyUnits) {
@@ -1051,7 +1191,7 @@ export class BattleSimulator {
 
       // Move towards target if out of range (unless this is a support healer)
       if (distance > effectiveRange && !isSupportHealer) {
-        this.moveTowards(attacker, target);
+        this.moveTowards(attacker, target, reservedPositions);
         // Reset cooldown after moving
         attacker.cooldown = 0;
         // Decrement ability cooldowns (moving counts as an action)
@@ -1159,7 +1299,8 @@ export class BattleSimulator {
       // Check if target died
       if (target.stats.hp <= 0) {
         target.isAlive = false;
-        // Vacate grid position in GridManager
+        // Remove from both position managers
+        this.positionManager.removeUnit(target.id);
         this.gridManager.vacate(target.position);
         this.addEvent(BattleEventType.Death, {
           unit: target.name,
@@ -1200,12 +1341,20 @@ export class BattleSimulator {
     if (!enemiesAlive) {
       // Check if there are more waves to spawn
       if (this.state.enemyWaves.length > 0) {
-        // Wave completed - add pause event for player decision
-        this.addEvent(BattleEventType.WaveComplete, {
-          waveNumber: this.state.currentWave,
-          totalWaves: this.state.totalWaves,
-          nextWaveNumber: this.state.currentWave + 1,
-        });
+        // Determine if we should pause for player decision
+        // Pause every 3 waves, or before the final boss wave
+        const shouldPause =
+          this.state.currentWave % 3 === 0 || // Every 3 waves
+          this.state.currentWave + 1 === this.state.totalWaves; // Before boss wave
+
+        if (shouldPause) {
+          // Wave completed - add pause event for player decision
+          this.addEvent(BattleEventType.WaveComplete, {
+            waveNumber: this.state.currentWave,
+            totalWaves: this.state.totalWaves,
+            nextWaveNumber: this.state.currentWave + 1,
+          });
+        }
 
         // Then spawn the next wave
         this.spawnNextWave();
@@ -1232,59 +1381,104 @@ export class BattleSimulator {
 
     console.log(`[spawnNextWave] Spawning wave ${this.state.currentWave} with ${nextWave.length} enemies`);
 
-    // Reset hero positions to starting positions before new wave
-    const getHeroPosition = (index: number): GridPosition => {
-      const row = 2 + Math.floor(index / 2);
-      const col = index % 2;
+    // Wave transition with scroll
+    const scrollDistance = 2; // Number of grid cells the background scrolls left
+    const aliveHeroes = this.state.heroes.filter(h => h.isAlive);
+    const aliveEnemies = this.state.enemies.filter(e => e.isAlive);
 
-      if (row > 7) {
-        const overflowIndex = index - 12;
-        return {
-          row: Math.floor(overflowIndex / 2),
-          col: overflowIndex % 2
-        };
-      }
+    console.log(`[spawnNextWave] Starting wave ${this.state.currentWave} transition`);
 
-      return { row, col };
-    };
+    // Update positions IMMEDIATELY to keep logic and visuals in sync
+    // This prevents the mismatch between visual and logical positions
 
-    // Move all heroes back to their starting positions
-    const heroRepositioningEvents: any[] = [];
-    this.state.heroes.forEach((hero, index) => {
-      if (!hero.isAlive) return; // Don't reposition dead heroes
+    // First, update all unit positions logically
+    aliveHeroes.forEach(hero => {
+      const oldPos = { ...hero.position };
+      // Heroes shift scrollDistance + 1 tiles (extra tile to make room)
+      const newCol = Math.max(0, hero.position.col - scrollDistance - 1);
+      const newPos = { row: hero.position.row, col: newCol };
 
-      const startPosition = getHeroPosition(index);
-      const oldPosition = { ...hero.position };
+      // Update position immediately
+      hero.position = newPos;
+      console.log(`[spawnNextWave] Hero ${hero.name} logical position updated from col ${oldPos.col} to col ${newPos.col}`);
+    });
 
-      // Only create movement event if position actually changed
-      if (oldPosition.row !== startPosition.row || oldPosition.col !== startPosition.col) {
-        // Update GridManager with atomic move
-        const moveSuccess = this.gridManager.move(hero.id, oldPosition, startPosition);
-        if (moveSuccess) {
-          hero.position = startPosition;
-          heroRepositioningEvents.push({
-            unitId: hero.id,
-            name: hero.name,
-            from: oldPosition,
-            to: startPosition,
-          });
-        } else {
-          console.error(`[spawnNextWave] Failed to reposition hero ${hero.name} from`, oldPosition, 'to', startPosition);
-        }
+    aliveEnemies.forEach(enemy => {
+      const oldPos = { ...enemy.position };
+      const newCol = enemy.position.col - scrollDistance;
+
+      if (newCol >= 0) {
+        enemy.position = { row: enemy.position.row, col: newCol };
+        console.log(`[spawnNextWave] Enemy ${enemy.name} logical position updated from col ${oldPos.col} to col ${newCol}`);
       }
     });
 
-    // Add repositioning events if any heroes moved
-    if (heroRepositioningEvents.length > 0) {
-      heroRepositioningEvents.forEach(event => {
-        this.addEvent(BattleEventType.Move, {
-          unit: event.name,
-          unitId: event.unitId,
-          from: event.from,
-          to: event.to,
-        });
+    // NOW trigger the transition event with updated positions
+    this.addEvent(BattleEventType.WaveTransition, {
+      waveNumber: this.state.currentWave,
+      scrollDistance, // Number of grid cells to scroll
+      duration: 1000, // Animation duration in ms
+    });
+
+    // Update position managers after a short delay to let animations start
+    setTimeout(() => {
+      // Sync position managers with already-updated positions
+      aliveHeroes.forEach(hero => {
+        // Position was already updated above, just sync the managers
+        const newPos = hero.position;
+
+        // Check if hero is in PositionManager
+        const currentPos = this.positionManager.getLogicalPosition(hero.id);
+        if (!currentPos) {
+          console.warn(`[spawnNextWave] Hero ${hero.name} not in PositionManager, initializing at (${newPos.row},${newPos.col})`);
+          this.positionManager.initializeUnit(hero.id, newPos);
+          this.gridManager.occupy(newPos, hero.id);
+        } else {
+          // Update PositionManager to match new position
+          const oldPos = currentPos;
+          if (this.positionManager.moveUnit(hero.id, newPos)) {
+            this.gridManager.vacate(oldPos);
+            this.gridManager.occupy(newPos, hero.id);
+            console.log(`[spawnNextWave] Synced ${hero.name} position in managers`);
+          }
+        }
       });
-    }
+
+      aliveEnemies.forEach(enemy => {
+        const newPos = enemy.position; // Already updated above
+
+        if (newPos.col < 0) {
+          // Enemy was pushed off screen
+          enemy.isAlive = false;
+          this.positionManager.removeUnit(enemy.id);
+          this.gridManager.vacate({ row: newPos.row, col: Math.max(0, newPos.col + scrollDistance) });
+          // Also remove from state enemies array
+          const enemyIndex = this.state.enemies.findIndex(e => e.id === enemy.id);
+          if (enemyIndex > -1) {
+            this.state.enemies.splice(enemyIndex, 1);
+            console.log(`[spawnNextWave] Removed off-screen enemy ${enemy.name} from state`);
+          }
+        } else {
+          // Sync position managers with already-updated position
+          const currentPos = this.positionManager.getLogicalPosition(enemy.id);
+          if (!currentPos) {
+            console.warn(`[spawnNextWave] Enemy ${enemy.name} not in PositionManager, initializing at (${newPos.row},${newPos.col})`);
+            this.positionManager.initializeUnit(enemy.id, newPos);
+            this.gridManager.occupy(newPos, enemy.id);
+          } else {
+            // Update PositionManager to match new position
+            const oldPos = currentPos;
+            if (this.positionManager.moveUnit(enemy.id, newPos)) {
+              this.gridManager.vacate(oldPos);
+              this.gridManager.occupy(newPos, enemy.id);
+              console.log(`[spawnNextWave] Synced ${enemy.name} position in managers`);
+            }
+          }
+        }
+      });
+
+      console.log(`[spawnNextWave] Updated positions after scroll`);
+    }, 1100); // Slightly after animation completes
 
     // Helper function to get enemy position (same as constructor)
     const getEnemyPosition = (index: number): GridPosition => {
@@ -1302,10 +1496,9 @@ export class BattleSimulator {
       return { row, col };
     };
 
-    // Convert enemies to battle units (starting off-screen to the right at col 8)
+    // Convert enemies to battle units
     const newEnemyUnits: BattleUnit[] = nextWave.map((e, index) => {
       const finalPosition = getEnemyPosition(index);
-      const startPosition = { ...finalPosition, col: 8 }; // Start off-screen to the right
 
       const abilityCooldowns = new Map<string, number>();
       const enemyAbilities = e.abilities || [];
@@ -1326,7 +1519,7 @@ export class BattleSimulator {
         statusEffects: [],
         isHero: false,
         isAlive: true,
-        position: startPosition, // Start off-screen
+        position: finalPosition, // Use final position for game logic
         range: maxAbilityRange,
         cooldown: 0,
         cooldownRate: e.currentStats.speed / 10,
@@ -1342,28 +1535,72 @@ export class BattleSimulator {
     console.log(`[spawnNextWave] Added ${newEnemyUnits.length} enemies to state. Total enemies in state: ${this.state.enemies.length}`);
     console.log(`[spawnNextWave] New enemies:`, newEnemyUnits.map(e => ({ name: e.name, wave: e.wave, pos: e.position, hp: e.stats.hp })));
 
-    // Register new enemies with GridManager at their FINAL positions (not off-screen)
-    // This is important because GridManager needs to know about them for collision detection
-    // Even though they visually start off-screen, their logical grid position is on-screen
+    // Clear any stale positions for enemies before spawning new ones
+    // This ensures no collision with dead enemies that weren't properly cleaned up
+    for (let row = 0; row < 8; row++) {
+      for (let col = 6; col <= 7; col++) {
+        const pos = { row, col };
+        const occupant = this.positionManager.getOccupant(pos);
+        if (occupant) {
+          // Check if this unit is actually alive
+          const unit = [...this.state.heroes, ...this.state.enemies].find(u => u.id === occupant);
+          if (!unit || !unit.isAlive) {
+            console.log(`[spawnNextWave] Cleaning up stale position (${row},${col}) occupied by ${occupant}`);
+            this.positionManager.removeUnit(occupant);
+            this.gridManager.vacate(pos);
+          }
+        }
+      }
+    }
+
+    // Register new enemies with both PositionManager and GridManager
     newEnemyUnits.forEach((enemy, index) => {
       const finalPosition = getEnemyPosition(index);
 
-      // Occupy the final position in GridManager
-      const occupied = this.gridManager.occupy(finalPosition, enemy.id);
-      if (!occupied) {
-        console.error(`[spawnNextWave] Failed to occupy position for enemy ${enemy.name} at`, finalPosition);
-        // Find nearest empty tile as fallback
-        const nearestEmpty = this.gridManager.findNearestEmptyTile(finalPosition);
-        if (nearestEmpty) {
-          console.log(`[spawnNextWave] Moving ${enemy.name} to nearest empty tile:`, nearestEmpty);
-          // Update the enemy's final position to use the nearest empty tile
-          this.gridManager.occupy(nearestEmpty, enemy.id);
-        }
+      // Validate position is well-formed
+      if (!finalPosition || typeof finalPosition.row !== 'number' || typeof finalPosition.col !== 'number') {
+        console.error(`[spawnNextWave] Invalid position for enemy ${enemy.name} at index ${index}:`, finalPosition);
+        // Use a fallback position
+        const fallbackPosition = { row: 2 + (index % 6), col: 7 };
+        enemy.position = fallbackPosition;
+        this.positionManager.initializeUnit(enemy.id, fallbackPosition);
+        this.gridManager.occupy(fallbackPosition, enemy.id);
+        return;
       }
 
-      // Update enemy position to final position immediately (for simulation logic)
-      // The rendering layer will handle the slide-in animation separately
-      enemy.position = finalPosition;
+      // Try to initialize in PositionManager first
+      if (this.positionManager.initializeUnit(enemy.id, finalPosition)) {
+        // Successfully initialized in PositionManager
+        enemy.position = finalPosition;
+        this.gridManager.occupy(finalPosition, enemy.id);
+        console.log(`[spawnNextWave] Placed ${enemy.name} at (${finalPosition.row},${finalPosition.col})`);
+      } else {
+        // Position is occupied, find who's there
+        const occupant = this.positionManager.getOccupant(finalPosition);
+        console.log(`[spawnNextWave] Position (${finalPosition.row},${finalPosition.col}) occupied by ${occupant} when trying to place ${enemy.name}, finding alternative`);
+        const nearestEmpty = this.findNearestEmptyPosition(finalPosition);
+        if (nearestEmpty) {
+          console.log(`[spawnNextWave] Moving ${enemy.name} to nearest empty tile: (${nearestEmpty.row},${nearestEmpty.col})`);
+          if (this.positionManager.initializeUnit(enemy.id, nearestEmpty)) {
+            enemy.position = nearestEmpty;
+            this.gridManager.occupy(nearestEmpty, enemy.id);
+          } else {
+            console.error(`[spawnNextWave] Failed to place ${enemy.name} at alternative position`);
+            // Remove this enemy from the wave - it can't be placed
+            const enemyIndex = newEnemyUnits.indexOf(enemy);
+            if (enemyIndex > -1) {
+              newEnemyUnits.splice(enemyIndex, 1);
+            }
+          }
+        } else {
+          console.error(`[spawnNextWave] No empty tiles available for ${enemy.name}`);
+          // Remove this enemy from the wave - it can't be placed
+          const enemyIndex = newEnemyUnits.indexOf(enemy);
+          if (enemyIndex > -1) {
+            newEnemyUnits.splice(enemyIndex, 1);
+          }
+        }
+      }
     });
 
     // Add wave start event with slide-in animations
@@ -1371,11 +1608,11 @@ export class BattleSimulator {
     this.addEvent(BattleEventType.WaveStart, {
       waveNumber: this.state.currentWave,
       totalWaves: this.state.totalWaves,
-      enemies: newEnemyUnits.map((e, index) => ({
+      enemies: newEnemyUnits.map((e) => ({
         unitId: e.id,
         name: e.name,
         fromPosition: { ...e.position, col: 8 }, // Animation starts from off-screen
-        toPosition: getEnemyPosition(index), // Animation ends at final position
+        toPosition: e.position, // Animation ends at actual occupied position
       })),
     });
   }

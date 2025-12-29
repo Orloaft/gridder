@@ -35,7 +35,7 @@ export function useRewardReveal() {
     }
 
     hasStartedRef.current = true;
-    console.log('[useRewardReveal] Starting reward reveal with:', pendingRewards);
+    console.log('[useRewardReveal] Starting reward reveal - Gold:', pendingRewards.goldEarned, 'Gems:', pendingRewards.gemsEarned, 'Items:', pendingRewards.items.length);
 
     // Create reward reveal manager
     const manager = new RewardRevealManager(pendingRewards);
