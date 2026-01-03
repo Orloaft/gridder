@@ -71,11 +71,17 @@ export function useRewardReveal() {
       // Reset grid size to default (8x8) before navigating back
       state.setGridSize(8, 8);
 
-      // Navigate back to location map
-      if ((window as any).__gridNavigate) {
-        (window as any).__gridNavigate(ScreenType.LocationMap);
+      // Check if any heroes need to level up
+      if (state.levelUpQueue && state.levelUpQueue.length > 0) {
+        console.log('[useRewardReveal] Processing level up queue after rewards');
+        state.processNextLevelUp();
       } else {
-        state.navigate(ScreenType.LocationMap);
+        // No level ups, navigate back to location map
+        if ((window as any).__gridNavigate) {
+          (window as any).__gridNavigate(ScreenType.LocationMap);
+        } else {
+          state.navigate(ScreenType.LocationMap);
+        }
       }
     };
 

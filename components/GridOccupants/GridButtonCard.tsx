@@ -77,6 +77,33 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
     }
   };
 
+  // Drag-and-drop handlers for draggable buttons (items)
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!button.draggable) return;
+
+    // Set the item ID in the drag data
+    if (button.itemInstanceId) {
+      e.dataTransfer.setData('itemId', button.itemInstanceId);
+      e.dataTransfer.effectAllowed = 'move';
+
+      // Make the button semi-transparent while dragging
+      if (buttonRef.current) {
+        buttonRef.current.style.opacity = '0.5';
+      }
+    }
+
+    if (button.onDragStart) {
+      button.onDragStart();
+    }
+  };
+
+  const handleDragEnd = () => {
+    // Restore opacity after drag
+    if (buttonRef.current) {
+      buttonRef.current.style.opacity = '1';
+    }
+  };
+
   // Drag-and-drop handlers for drop zones
   const handleDragOver = (e: React.DragEvent) => {
     if (!button.onDrop) return;
@@ -99,13 +126,16 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
     <button
       ref={buttonRef}
       data-grid-card
+      draggable={button.draggable}
       onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       disabled={button.disabled}
-      className={`relative w-full h-full bg-gradient-to-br ${baseStyles} border-2 rounded-lg overflow-hidden shadow-lg cursor-pointer disabled:cursor-not-allowed`}
+      className={`relative w-full h-full bg-gradient-to-br ${baseStyles} border-2 rounded-lg overflow-hidden shadow-lg ${button.draggable ? 'cursor-move' : 'cursor-pointer'} disabled:cursor-not-allowed`}
       style={{ opacity: 0, transform: 'scale(0)' }}
     >
       {/* Icon fills entire tile */}

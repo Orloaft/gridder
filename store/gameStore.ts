@@ -13,6 +13,8 @@ import { createHeroMenuLayout } from '@/screens/HeroMenu/HeroMenuLayout';
 import { createShopLayout } from '@/screens/Shop/ShopLayout';
 import { createAbilitySelectionLayout } from '@/screens/AbilitySelection/AbilitySelectionLayout';
 import { createRewardRevealLayout } from '@/screens/RewardReveal/RewardRevealLayout';
+import { createLevelUpChoiceLayout, generateLevelUpChoices } from '@/screens/LevelUpChoice/LevelUpChoiceLayout';
+import { createBattleInventoryLayout } from '@/screens/BattleInventory/BattleInventoryLayout';
 import { createHeroInstance, createEnemyInstance, getHeroGemCost, LEARNABLE_ABILITIES, HERO_LEARNABLE_ABILITIES } from '@/data/units';
 import { getStageById, getNextUnlockedStage } from '@/data/stages';
 import { getLocationByStageId } from '@/data/locations';
@@ -100,6 +102,14 @@ interface GameStore extends GameState {
   setAbilitySelectionHero: (heroId: string | null) => void;
   learnAbility: (heroInstanceId: string, abilityId: string) => void;
 
+  // Level up choice system
+  levelUpHeroId: string | null;
+  levelUpQueue: string[]; // Queue of heroes that need to make level up choices
+  setLevelUpHero: (heroId: string | null) => void;
+  addToLevelUpQueue: (heroId: string) => void;
+  processNextLevelUp: () => void;
+  applyLevelUpChoice: (heroId: string, choiceType: 'stat' | 'ability', data: any) => void;
+
   // Inventory management
   addItem: (item: Item) => void;
   removeItem: (itemId: string) => void;
@@ -107,6 +117,7 @@ interface GameStore extends GameState {
   unequipItem: (itemInstanceId: string) => void;
   recalculateHeroStats: (heroInstanceId: string) => void;
   sellItem: (itemInstanceId: string) => boolean;
+  useConsumable: (itemInstanceId: string, heroInstanceId: string) => boolean;
 
   // Team selection
   setSelectedTeam: (heroInstanceIds: string[]) => void;
@@ -179,6 +190,8 @@ const initialState = {
   shopItems: [] as Item[],
   shopHeroes: [] as Hero[],
   abilitySelectionHeroId: null as string | null,
+  levelUpHeroId: null as string | null,
+  levelUpQueue: [] as string[], // Queue of heroes that need to make level up choices
 };
 
 export const useGameStore = create<GameStore>()(
@@ -350,6 +363,87 @@ export const useGameStore = create<GameStore>()(
               state.learnAbility
             );
           }
+        } else if (screen === ScreenType.LevelUpChoice && state.levelUpHeroId) {
+          // Find the hero that needs to make a level up choice
+          const hero = state.roster.find(h => h.instanceId === state.levelUpHeroId);
+          console.log('[Navigate LevelUpChoice] levelUpHeroId:', state.levelUpHeroId, 'hero found:', !!hero);
+          if (hero) {
+            const choices = generateLevelUpChoices(hero);
+            console.log('[Navigate LevelUpChoice] Generated choices:', choices);
+            newOccupants = createLevelUpChoiceLayout(
+              hero,
+              choices,
+              (choice) => {
+                // Apply the chosen upgrade
+                if (choice.type === 'stat') {
+                  state.applyLevelUpChoice(hero.instanceId, 'stat', choice.statBonus);
+                } else if (choice.type === 'ability') {
+                  state.applyLevelUpChoice(hero.instanceId, 'ability', { abilityId: choice.abilityId });
+                }
+                // After applying, process the next hero in queue
+                state.processNextLevelUp();
+              }
+            );
+            console.log('[Navigate LevelUpChoice] Created occupants:', newOccupants.length, 'items:', newOccupants.map(o => o.id));
+          } else {
+            console.error('[Navigate LevelUpChoice] Hero not found for ID:', state.levelUpHeroId);
+          }
+        } else if (screen === ScreenType.BattleInventory) {
+          // Battle inventory management screen
+          // Get heroes with their current battle HP if in battle
+          let battleHeroes = state.preBattleTeam
+            .map(heroId => state.roster.find(h => h.instanceId === heroId))
+            .filter(h => h !== undefined) as Hero[];
+
+          // If we're in a battle, sync HP from battle state
+          if (state.currentBattle) {
+            battleHeroes = battleHeroes.map(hero => {
+              const battleHero = state.currentBattle.heroes.find(h => h.instanceId === hero.instanceId);
+              if (battleHero) {
+                return {
+                  ...hero,
+                  currentStats: {
+                    ...hero.currentStats,
+                    hp: battleHero.stats.hp,
+                    maxHp: battleHero.stats.maxHp
+                  }
+                };
+              }
+              return hero;
+            });
+          }
+
+          newOccupants = createBattleInventoryLayout(
+            battleHeroes,
+            state.inventory,
+            state.equipItem,
+            state.unequipItem,
+            state.useConsumable,
+            () => {
+              // Recalculate hero stats after item changes
+              battleHeroes.forEach(hero => {
+                state.recalculateHeroStats(hero.instanceId);
+              });
+
+              // Update battle state with new hero stats if battle is ongoing
+              if (state.currentBattle) {
+                // Update hero stats in battle state
+                state.currentBattle.heroes.forEach(battleHero => {
+                  const updatedHero = state.roster.find(h => h.instanceId === battleHero.instanceId);
+                  if (updatedHero) {
+                    // Update stats while preserving current HP ratio
+                    const hpRatio = battleHero.stats.hp / battleHero.stats.maxHp;
+                    battleHero.stats = { ...updatedHero.currentStats };
+                    battleHero.stats.hp = Math.floor(battleHero.stats.maxHp * hpRatio);
+                    console.log(`[BattleInventory] Updated ${battleHero.name} stats after equipment change`);
+                  }
+                });
+              }
+
+              // Go back to battle
+              state.navigate(ScreenType.Battle);
+            }
+          );
         } else if (screen === ScreenType.RewardReveal && state.pendingRewards) {
           // Reward reveal screen - This will be managed by useRewardReveal hook
           // Just return empty occupants for now - the hook will populate them
@@ -496,12 +590,11 @@ export const useGameStore = create<GameStore>()(
           state.recalculateHeroStatsWithLevel(heroInstanceId);
         }
 
-        // Check if hero needs to select an ability after leveling up
-        // Use the stored state from before the update
-        if (didLevelUp && hadNoAbilities && HERO_LEARNABLE_ABILITIES[hero.id]) {
-          // Hero leveled up and has no abilities - trigger ability selection
-          console.log(`${hero.name} can now learn an ability!`);
-          state.setAbilitySelectionHero(heroInstanceId);
+        // Check if hero leveled up and needs to make a choice
+        if (didLevelUp) {
+          console.log(`${hero.name} leveled up to level ${newLevel}! Adding to level up queue...`);
+          // Add the hero to level up queue
+          state.addToLevelUpQueue(heroInstanceId);
         }
       },
 
@@ -576,10 +669,24 @@ export const useGameStore = create<GameStore>()(
         const item = state.inventory.find(i => i.instanceId === itemInstanceId);
         const hero = state.roster.find(h => h.instanceId === heroInstanceId);
 
-        if (!item || !hero) return false;
+        console.log('[equipItem] Called with:', { itemInstanceId, heroInstanceId });
+        console.log('[equipItem] Found item:', item);
+        console.log('[equipItem] Found hero:', hero);
+
+        if (!item || !hero) {
+          console.error('[equipItem] Item or hero not found');
+          return false;
+        }
+
+        // Check if item is already equipped to someone else
+        if (item.equippedTo && item.equippedTo !== heroInstanceId) {
+          console.log('[equipItem] Item is equipped to another hero, unequipping first');
+          state.unequipItem(itemInstanceId);
+        }
 
         // Check if hero already has an item equipped
-        if (hero.equippedItem) {
+        if (hero.equippedItem && hero.equippedItem !== itemInstanceId) {
+          console.log('[equipItem] Hero has another item equipped, unequipping first');
           // Unequip current item first
           state.unequipItem(hero.equippedItem);
         }
@@ -600,6 +707,14 @@ export const useGameStore = create<GameStore>()(
 
         // Recalculate hero stats with new item
         state.recalculateHeroStats(heroInstanceId);
+
+        console.log('[equipItem] Successfully equipped', item.name, 'to', hero.name);
+
+        // Refresh the screen to show updated equipment
+        const currentState = get();
+        if (currentState.currentScreen === ScreenType.BattleInventory) {
+          currentState.navigate(currentState.currentScreen);
+        }
 
         // If item is consumable, remove it from inventory after equipping
         if (item.consumable) {
@@ -642,6 +757,234 @@ export const useGameStore = create<GameStore>()(
         }));
 
         return true;
+      },
+
+      useConsumable: (itemInstanceId: string, heroInstanceId: string) => {
+        const state = get();
+        const item = state.inventory.find(i => i.instanceId === itemInstanceId);
+        const hero = state.roster.find(h => h.instanceId === heroInstanceId);
+
+        console.log('[useConsumable] Starting:', { itemInstanceId, heroInstanceId });
+        console.log('[useConsumable] Found item:', item);
+        console.log('[useConsumable] Found hero:', hero);
+
+        if (!item || !hero) {
+          console.error('[useConsumable] Item or hero not found');
+          return false;
+        }
+
+        // Check if item is consumable - items already have all the data, don't need to look up in ITEM_TEMPLATES
+        if (item.type !== 'consumable' && item.category !== 4) {
+          console.error('[useConsumable] Item is not consumable:', item);
+          return false;
+        }
+
+        // Apply consumable effect based on item id
+        let effectApplied = false;
+        const itemId = item.id;
+        console.log('[useConsumable] Applying effect for item ID:', itemId);
+
+        switch (itemId) {
+          case 'health_potion_small':
+            hero.currentStats.hp = Math.min(hero.currentStats.hp + 50, hero.currentStats.maxHp);
+            effectApplied = true;
+            break;
+
+          case 'health_potion_medium':
+            hero.currentStats.hp = Math.min(hero.currentStats.hp + 100, hero.currentStats.maxHp);
+            effectApplied = true;
+            break;
+
+          case 'health_potion_large':
+            hero.currentStats.hp = Math.min(hero.currentStats.hp + 200, hero.currentStats.maxHp);
+            effectApplied = true;
+            break;
+
+          case 'mana_potion_small':
+            // Reduce ability cooldowns by 50%
+            if (hero.abilities) {
+              hero.abilities.forEach(ability => {
+                if (ability.currentCooldown) {
+                  ability.currentCooldown = Math.floor(ability.currentCooldown * 0.5);
+                }
+              });
+            }
+            effectApplied = true;
+            break;
+
+          case 'antidote':
+            // Remove poison/debuff effects
+            if (hero.statusEffects) {
+              hero.statusEffects = hero.statusEffects.filter(
+                effect => effect.type !== 'poison' && effect.type !== 'debuff'
+              );
+            }
+            effectApplied = true;
+            break;
+
+          case 'strength_potion':
+            // Temporary 50% attack boost for next battle
+            hero.tempBuffs = hero.tempBuffs || [];
+            hero.tempBuffs.push({ stat: 'attack', value: 0.50, duration: 1 });
+            effectApplied = true;
+            break;
+
+          case 'speed_potion':
+            // Temporary 30% speed boost for next battle
+            hero.tempBuffs = hero.tempBuffs || [];
+            hero.tempBuffs.push({ stat: 'speed', value: 0.30, duration: 1 });
+            effectApplied = true;
+            break;
+
+          case 'defense_potion':
+            // Temporary +20 defense for next battle
+            hero.tempBuffs = hero.tempBuffs || [];
+            hero.tempBuffs.push({ stat: 'defense', value: 20, duration: 1, absolute: true });
+            effectApplied = true;
+            break;
+
+          case 'regeneration_potion':
+            // Heal 20 HP per second during next wave
+            hero.regenEffect = { healPerSecond: 20, duration: 'nextWave' };
+            effectApplied = true;
+            break;
+
+          case 'berserker_elixir':
+            // Double damage but halve defense for next battle
+            hero.tempBuffs = hero.tempBuffs || [];
+            hero.tempBuffs.push({ stat: 'damage', value: 1.0, duration: 1 });
+            hero.tempBuffs.push({ stat: 'defense', value: -0.50, duration: 1 });
+            effectApplied = true;
+            break;
+
+          case 'invisibility_potion':
+            // Cannot be targeted for first 5 seconds
+            hero.invisibilityDuration = 5;
+            effectApplied = true;
+            break;
+
+          case 'cleansing_elixir':
+            // Remove all debuffs and grant immunity
+            if (hero.statusEffects) {
+              hero.statusEffects = hero.statusEffects.filter(effect => effect.type === 'buff');
+            }
+            hero.debuffImmunity = { duration: 3 };
+            effectApplied = true;
+            break;
+
+          case 'full_restore':
+            // Full HP
+            hero.currentStats.hp = hero.currentStats.maxHp;
+            effectApplied = true;
+            break;
+
+          case 'group_heal_elixir':
+            // Heal all heroes for 150 HP
+            state.roster.forEach(h => {
+              if (h.currentStats.hp > 0) {
+                h.currentStats.hp = Math.min(h.currentStats.hp + 150, h.currentStats.maxHp);
+              }
+            });
+            effectApplied = true;
+            break;
+
+          case 'titan_brew':
+            // +25% all stats for next battle
+            hero.tempBuffs = hero.tempBuffs || [];
+            hero.tempBuffs.push({ stat: 'damage', value: 0.25, duration: 1 });
+            hero.tempBuffs.push({ stat: 'defense', value: 0.25, duration: 1 });
+            hero.tempBuffs.push({ stat: 'speed', value: 0.25, duration: 1 });
+            hero.tempBuffs.push({ stat: 'hp', value: 0.25, duration: 1 });
+            effectApplied = true;
+            break;
+
+          case 'chrono_elixir':
+            // Reset all ability cooldowns
+            if (hero.abilities) {
+              hero.abilities.forEach(ability => {
+                ability.currentCooldown = 0;
+              });
+            }
+            effectApplied = true;
+            break;
+
+          case 'phoenix_tears':
+            // Resurrect if dead or heal to full if alive
+            if (hero.currentStats.hp <= 0 || hero.isDefeated) {
+              hero.currentStats.hp = hero.currentStats.maxHp;
+              hero.isDefeated = false;
+            } else {
+              hero.currentStats.hp = hero.currentStats.maxHp;
+            }
+            effectApplied = true;
+            break;
+
+          case 'divine_protection':
+            // Invulnerable for next wave
+            hero.invulnerableForWave = true;
+            effectApplied = true;
+            break;
+
+          case 'miracle_elixir':
+            // Fully heal all heroes and reset all cooldowns
+            state.roster.forEach(h => {
+              h.currentStats.hp = h.currentStats.maxHp;
+              if (h.abilities) {
+                h.abilities.forEach(ability => {
+                  ability.currentCooldown = 0;
+                });
+              }
+            });
+            effectApplied = true;
+            break;
+
+          default:
+            console.warn(`[useConsumable] Unknown consumable item ID: ${itemId}`);
+            // Try to apply basic healing if it has HP effect
+            if (item.effects && item.effects.length > 0) {
+              const hpEffect = item.effects.find(e => e.stat === 'hp');
+              if (hpEffect && hpEffect.type === 'add') {
+                hero.currentStats.hp = Math.min(hero.currentStats.hp + hpEffect.value, hero.currentStats.maxHp);
+                effectApplied = true;
+                console.log(`[useConsumable] Applied generic HP effect: +${hpEffect.value}`);
+              }
+            }
+            break;
+        }
+
+        if (effectApplied) {
+          // Remove consumable from inventory and update roster
+          set((state) => {
+            const updatedState: any = {
+              inventory: state.inventory.filter(i => i.instanceId !== itemInstanceId),
+              roster: state.roster // Update roster with modified heroes
+            };
+
+            // If in battle, also update the battle state
+            if (state.currentBattle) {
+              const battleHero = state.currentBattle.heroes.find(h => h.instanceId === heroInstanceId);
+              if (battleHero) {
+                // Update the battle hero's HP to match what we just set
+                battleHero.stats.hp = hero.currentStats.hp;
+                battleHero.stats.maxHp = hero.currentStats.maxHp;
+                console.log(`[useConsumable] Updated battle hero ${battleHero.name} HP to ${battleHero.stats.hp}/${battleHero.stats.maxHp}`);
+              }
+              updatedState.currentBattle = state.currentBattle;
+            }
+
+            return updatedState;
+          });
+
+          console.log(`Used ${item.name} on ${hero.name}`);
+
+          // Refresh the screen to show updated HP
+          const currentState = get();
+          currentState.navigate(currentState.currentScreen);
+
+          return true;
+        }
+
+        return false;
       },
 
       unequipItem: (itemInstanceId: string) => {
@@ -746,6 +1089,123 @@ export const useGameStore = create<GameStore>()(
         } else {
           freshState.navigate(ScreenType.LocationMap);
         }
+      },
+
+      // Level up choice system
+      setLevelUpHero: (heroId: string | null) => {
+        set({ levelUpHeroId: heroId });
+
+        // Navigate to level up choice screen if heroId is provided
+        if (heroId) {
+          const state = get();
+          console.log(`[Level Up] Hero ${heroId} needs to choose an upgrade`);
+          state.navigate(ScreenType.LevelUpChoice);
+        }
+      },
+
+      addToLevelUpQueue: (heroId: string) => {
+        set((state) => {
+          // Only add if not already in queue
+          if (!state.levelUpQueue.includes(heroId)) {
+            console.log(`[Level Up Queue] Adding hero ${heroId} to level up queue`);
+            return { levelUpQueue: [...state.levelUpQueue, heroId] };
+          }
+          return state;
+        });
+      },
+
+      processNextLevelUp: () => {
+        const state = get();
+        if (state.levelUpQueue.length > 0) {
+          const nextHeroId = state.levelUpQueue[0];
+          console.log(`[Level Up Queue] Processing level up for hero ${nextHeroId}`);
+
+          // Remove from queue and set as current level up hero
+          set((s) => ({
+            levelUpQueue: s.levelUpQueue.slice(1),
+            levelUpHeroId: nextHeroId
+          }));
+
+          // Use fresh state after the set operation
+          setTimeout(() => {
+            const freshState = get();
+            console.log('[Level Up Queue] Navigating to LevelUpChoice, levelUpHeroId:', freshState.levelUpHeroId);
+            freshState.navigate(ScreenType.LevelUpChoice);
+          }, 0);
+        } else {
+          console.log('[Level Up Queue] No more heroes to level up, returning to location map');
+          // No more heroes to level up, return to location map
+          state.navigate(ScreenType.LocationMap);
+        }
+      },
+
+      applyLevelUpChoice: (heroId: string, choiceType: 'stat' | 'ability', data: any) => {
+        const state = get();
+        const hero = state.roster.find(h => h.instanceId === heroId);
+
+        if (!hero) {
+          console.error('[applyLevelUpChoice] Hero not found:', heroId);
+          return;
+        }
+
+        if (choiceType === 'stat') {
+          // Apply stat bonuses
+          const statBonus = data as {
+            hp?: number;
+            damage?: number;
+            defense?: number;
+            speed?: number;
+            critChance?: number;
+            critDamage?: number;
+          };
+
+          const updatedStats = { ...hero.currentStats };
+          const updatedBaseStats = { ...hero.baseStats };
+
+          if (statBonus.hp) {
+            updatedStats.hp += statBonus.hp;
+            updatedStats.maxHp += statBonus.hp;
+            updatedBaseStats.hp += statBonus.hp;
+            updatedBaseStats.maxHp += statBonus.hp;
+          }
+          if (statBonus.damage) {
+            updatedStats.damage += statBonus.damage;
+            updatedBaseStats.damage += statBonus.damage;
+          }
+          if (statBonus.defense) {
+            updatedStats.defense += statBonus.defense;
+            updatedBaseStats.defense += statBonus.defense;
+          }
+          if (statBonus.speed) {
+            updatedStats.speed += statBonus.speed;
+            updatedBaseStats.speed += statBonus.speed;
+          }
+          if (statBonus.critChance) {
+            updatedStats.critChance = Math.min(1, updatedStats.critChance + statBonus.critChance);
+            updatedBaseStats.critChance = Math.min(1, updatedBaseStats.critChance + statBonus.critChance);
+          }
+          if (statBonus.critDamage) {
+            updatedStats.critDamage += statBonus.critDamage;
+            updatedBaseStats.critDamage += statBonus.critDamage;
+          }
+
+          state.updateHero(heroId, {
+            currentStats: updatedStats,
+            baseStats: updatedBaseStats
+          });
+
+          console.log(`[Level Up] ${hero.name} chose stat upgrade:`, statBonus);
+        } else if (choiceType === 'ability') {
+          // Learn the chosen ability
+          const abilityId = data.abilityId;
+          if (abilityId) {
+            state.learnAbility(heroId, abilityId);
+            console.log(`[Level Up] ${hero.name} learned ability: ${abilityId}`);
+          }
+        }
+
+        // Clear level up state
+        set({ levelUpHeroId: null });
       },
 
       // Team selection
@@ -960,6 +1420,14 @@ export const useGameStore = create<GameStore>()(
           .filter((h) => h !== undefined) as Hero[];
 
         if (heroes.length === 0) return;
+
+        // Heal heroes to full before battle (remove this if you want persistent damage between battles)
+        heroes.forEach(hero => {
+          if (hero.currentStats.hp <= 0 || hero.currentStats.hp < hero.currentStats.maxHp) {
+            console.log(`[startBattle] Healing ${hero.name} from ${hero.currentStats.hp} to ${hero.currentStats.maxHp} HP`);
+            hero.currentStats.hp = hero.currentStats.maxHp;
+          }
+        });
 
         // Warn if team was trimmed
         if (state.preBattleTeam.length > stage.playerSlots) {
@@ -1181,6 +1649,15 @@ export const useGameStore = create<GameStore>()(
             if (unit) {
               unit.stats.hp = event.data.remainingHp;
             }
+          } else if (event.type === 'heal') {
+            // Handle heal events to update HP
+            const unit = [...state.currentBattle.heroes, ...state.currentBattle.enemies]
+              .find(u => u.id === event.data.unitId);
+            if (unit) {
+              // Add the heal amount to current HP, capped at maxHp
+              unit.stats.hp = Math.min(unit.stats.hp + event.data.amount, unit.stats.maxHp);
+              console.log(`[Heal Event] ${unit.name} healed for ${event.data.amount}, HP now: ${unit.stats.hp}/${unit.stats.maxHp}`);
+            }
           } else if (event.type === 'death') {
             const unit = [...state.currentBattle.heroes, ...state.currentBattle.enemies]
               .find(u => u.id === event.data.unitId);
@@ -1268,39 +1745,54 @@ export const useGameStore = create<GameStore>()(
                 console.log(`Boss defeated! Will award ${gemsEarned} gems!`);
               }
 
-              // Generate item drops with wave-based escalation (but don't add to inventory yet)
+              // Generate item drops for EACH wave completed (not just once!)
               const droppedItems: Array<{ id: string; name: string; rarity: string; icon: string; value: number }> = [];
               if (stage.lootConfig) {
-                const lootConfigWithWave = {
-                  ...stage.lootConfig,
-                  waveNumber: maxWaveReached,
-                };
-                const droppedItemIds = generateLoot(lootConfigWithWave);
-                if (droppedItemIds.length > 0) {
-                  droppedItemIds.forEach(itemId => {
-                    const itemTemplate = ITEM_TEMPLATES[itemId];
-                    if (itemTemplate) {
-                      // Add item to inventory immediately (so it's available for reward reveal)
-                      state.addItem(itemTemplate);
+                // Roll for items for each wave completed
+                for (let wave = 1; wave <= maxWaveReached; wave++) {
+                  const lootConfigWithWave = {
+                    ...stage.lootConfig,
+                    waveNumber: wave,
+                  };
+                  const droppedItemIds = generateLoot(lootConfigWithWave);
+                  if (droppedItemIds.length > 0) {
+                    droppedItemIds.forEach(itemId => {
+                      const itemTemplate = ITEM_TEMPLATES[itemId];
+                      if (itemTemplate) {
+                        // Add item to inventory immediately (so it's available for reward reveal)
+                        state.addItem(itemTemplate);
 
-                      // Also add to pending rewards display
-                      droppedItems.push({
-                        id: itemTemplate.id,
-                        name: itemTemplate.name,
-                        rarity: itemTemplate.rarity,
-                        icon: itemTemplate.icon || '📦',
-                        value: itemTemplate.cost || 0,
-                      });
-                      console.log(`Item dropped: ${itemTemplate.name} (${itemTemplate.rarity}) [Wave ${maxWaveReached}]`);
-                    }
-                  });
+                        // Also add to pending rewards display
+                        droppedItems.push({
+                          id: itemTemplate.id,
+                          name: itemTemplate.name,
+                          rarity: itemTemplate.rarity,
+                          icon: itemTemplate.icon || '📦',
+                          value: itemTemplate.cost || 0,
+                        });
+                        console.log(`Item dropped for wave ${wave}: ${itemTemplate.name} (${itemTemplate.rarity})`);
+                      }
+                    });
+                  }
                 }
+                console.log(`[Victory] Total items dropped: ${droppedItems.length} for ${maxWaveReached} waves completed`);
               }
 
-              // Award XP to all participating heroes immediately
-              const xpPerHero = Math.floor(stage.rewards.experience / state.preBattleTeam.length);
-              state.preBattleTeam.forEach(heroId => {
+              // Award XP to all participating heroes who survived
+              // Count surviving heroes for XP distribution
+              const survivingHeroes = state.preBattleTeam.filter(heroId => {
+                const battleHero = state.currentBattle!.heroes.find(h => h.instanceId === heroId);
+                return battleHero && battleHero.isAlive;
+              });
+
+              // Award XP only to surviving heroes
+              const xpPerHero = survivingHeroes.length > 0
+                ? Math.floor(stage.rewards.experience / survivingHeroes.length)
+                : 0;
+
+              survivingHeroes.forEach(heroId => {
                 state.awardHeroExperience(heroId, xpPerHero);
+                console.log(`Hero ${heroId} gained ${xpPerHero} XP for surviving the battle`);
               });
 
               // Update hero HP after battle and apply durability loss to equipped items of heroes who died (fainted)
@@ -1476,8 +1968,53 @@ export const useGameStore = create<GameStore>()(
         const netGold = Math.max(0, baseGold - medicalCosts);
         console.log(`Retreat gold reward: ${stage.rewards.gold * 0.5}g × ${goldMultiplier}x = ${baseGold}g - Medical costs: ${medicalCosts}g = ${netGold}g`);
 
-        // NO XP or item rewards on retreat (penalty for retreating)
-        console.log('No XP or item rewards awarded (retreat penalty)');
+        // Award partial XP based on progress in battle
+        // Give credit for partially completed waves based on enemies defeated
+        const currentWaveEnemiesDefeated = state.currentBattle.enemies.filter(e => e.wave === maxWaveReached && !e.isAlive).length;
+        const currentWaveTotalEnemies = state.currentBattle.enemies.filter(e => e.wave === maxWaveReached).length;
+        const currentWaveProgress = currentWaveTotalEnemies > 0 ? currentWaveEnemiesDefeated / currentWaveTotalEnemies : 0;
+
+        // Calculate effective waves completed (including partial progress in current wave)
+        const wavesFullyCompleted = Math.max(0, maxWaveReached - 1);
+        const effectiveWavesCompleted = wavesFullyCompleted + currentWaveProgress;
+
+        console.log(`[Retreat XP Debug] maxWaveReached: ${maxWaveReached}, wavesFullyCompleted: ${wavesFullyCompleted}`);
+        console.log(`[Retreat XP Debug] currentWave enemies: ${currentWaveEnemiesDefeated}/${currentWaveTotalEnemies} = ${(currentWaveProgress * 100).toFixed(1)}% progress`);
+        console.log(`[Retreat XP Debug] effectiveWavesCompleted: ${effectiveWavesCompleted.toFixed(2)}`);
+        console.log(`[Retreat XP Debug] totalWaves: ${state.currentBattle.totalWaves}`);
+        console.log(`[Retreat XP Debug] stage.rewards.experience: ${stage.rewards.experience}`);
+
+        if (effectiveWavesCompleted > 0 && state.currentBattle.totalWaves > 0) {
+          const baseXpPerWave = Math.floor(stage.rewards.experience / state.currentBattle.totalWaves);
+          const totalXp = Math.floor(baseXpPerWave * effectiveWavesCompleted * 0.5); // 50% XP penalty for retreat
+
+          console.log(`[Retreat XP Debug] baseXpPerWave: ${baseXpPerWave}, totalXp: ${totalXp}`);
+
+          // Award XP to surviving heroes only
+          const survivingHeroes = state.preBattleTeam.filter(heroId => {
+            const battleHero = state.currentBattle!.heroes.find(h => h.instanceId === heroId);
+            return battleHero && battleHero.isAlive;
+          });
+
+          console.log(`[Retreat XP Debug] survivingHeroes: ${survivingHeroes.length} of ${state.preBattleTeam.length}`);
+
+          if (survivingHeroes.length > 0 && totalXp > 0) {
+            const xpPerHero = Math.floor(totalXp / survivingHeroes.length);
+            survivingHeroes.forEach(heroId => {
+              const hero = state.roster.find(h => h.instanceId === heroId);
+              console.log(`[Retreat XP Debug] Awarding ${xpPerHero} XP to ${hero?.name} (${heroId})`);
+              state.awardHeroExperience(heroId, xpPerHero);
+            });
+            console.log(`Retreat XP awarded: ${totalXp} total (${xpPerHero} per surviving hero) for ${effectiveWavesCompleted.toFixed(2)} effective waves completed`);
+          } else {
+            console.log(`[Retreat XP Debug] No XP awarded - survivingHeroes: ${survivingHeroes.length}, totalXp: ${totalXp}`);
+          }
+        } else {
+          console.log(`No XP awarded - no progress made (effectiveWavesCompleted: ${effectiveWavesCompleted.toFixed(2)}, totalWaves: ${state.currentBattle.totalWaves})`);
+        }
+
+        // No item rewards on retreat (penalty for retreating)
+        console.log('No item rewards awarded (retreat penalty)');
 
         // Update hero HP after battle and apply durability loss to equipped items of heroes who died
         state.preBattleTeam.forEach(heroId => {
@@ -1517,11 +2054,47 @@ export const useGameStore = create<GameStore>()(
           }
         });
 
+        // Generate item drops based on waves completed (with retreat penalty)
+        const droppedItems: Array<{ id: string; name: string; rarity: string; icon: string; value: number }> = [];
+        if (stage.lootConfig && wavesFullyCompleted > 0) {
+          // Award items for each fully completed wave (not the current incomplete wave)
+          for (let wave = 1; wave <= wavesFullyCompleted; wave++) {
+            // Use a reduced drop chance for retreat (70% of normal chance)
+            const retreatLootConfig = {
+              ...stage.lootConfig,
+              itemDropChance: stage.lootConfig.itemDropChance * 0.7,
+              waveNumber: wave,
+            };
+
+            const droppedItemIds = generateLoot(retreatLootConfig);
+            if (droppedItemIds.length > 0) {
+              droppedItemIds.forEach(itemId => {
+                const itemTemplate = ITEM_TEMPLATES[itemId];
+                if (itemTemplate) {
+                  // Add item to inventory
+                  state.addItem(itemTemplate);
+
+                  // Add to pending rewards display
+                  droppedItems.push({
+                    id: itemTemplate.id,
+                    name: itemTemplate.name,
+                    rarity: itemTemplate.rarity,
+                    icon: itemTemplate.icon || '📦',
+                    value: itemTemplate.cost || 0,
+                  });
+                  console.log(`[Retreat] Item dropped for wave ${wave}: ${itemTemplate.name} (${itemTemplate.rarity})`);
+                }
+              });
+            }
+          }
+          console.log(`[Retreat] Total items dropped: ${droppedItems.length} for ${wavesFullyCompleted} waves completed`);
+        }
+
         // Create pending rewards object for reward reveal screen with breakdown
         const pendingRewards = {
           goldEarned: netGold,
           gemsEarned: 0, // No gems on retreat
-          items: [], // No items on retreat
+          items: droppedItems, // Items based on waves completed
           breakdown: {
             baseGold: Math.floor(stage.rewards.gold * 0.5), // 50% for retreat
             waveMultiplier: goldMultiplier,
@@ -1532,7 +2105,7 @@ export const useGameStore = create<GameStore>()(
           },
         };
 
-        console.log('🎰 NEW GACHA REWARD CREATED (RETREAT):', { gold: netGold, gems: 0, items: 0, hasBreakdown: true });
+        console.log('🎰 NEW GACHA REWARD CREATED (RETREAT):', { gold: netGold, gems: 0, items: droppedItems.length, hasBreakdown: true });
 
         // Set pending rewards
         state.setPendingRewards(pendingRewards);

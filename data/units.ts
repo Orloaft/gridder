@@ -626,7 +626,7 @@ export const HERO_TEMPLATES: Record<string, HeroTemplate> = {
         ],
       },
     ],
-    spritePath: ICON_PATHS.torchman,
+    spritePath: ICON_PATHS.armoredArcher,
     icon: '🏹',
     rarity: Rarity.Uncommon,
     description: 'Elite marksman with unparalleled accuracy and range',
@@ -1152,7 +1152,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     id: 'giant_spider',
     name: 'Giant Spider',
     type: 'Beast',
-    baseStats: createStats(20, 8, 100),
+    baseStats: createStats(18, 5, 100),
     abilities: [],
     spritePath: ICON_PATHS.plagueRat, // Using rat icon as placeholder
     description: 'Common forest spider',
@@ -1162,7 +1162,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     id: 'small_rat',
     name: 'Small Rat',
     type: 'Beast',
-    baseStats: createStats(15, 6, 120),
+    baseStats: createStats(12, 4, 120),
     abilities: [],
     spritePath: ICON_PATHS.plagueRat,
     description: 'Tiny scavenging rodent',
@@ -1172,7 +1172,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     id: 'wild_bat',
     name: 'Wild Bat',
     type: 'Beast',
-    baseStats: createStats(12, 10, 140),
+    baseStats: createStats(10, 6, 140),
     abilities: [],
     spritePath: ICON_PATHS.bat,
     description: 'Fast but fragile cave bat',
@@ -1182,7 +1182,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     id: 'plague_rat',
     name: 'Plague Rat',
     type: 'Beast',
-    baseStats: createStats(40, 15, 130),
+    baseStats: createStats(35, 10, 130),
     abilities: [
       {
         id: 'disease_bite',
@@ -1217,14 +1217,14 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     name: 'Wraith',
     type: 'Undead',
     baseStats: {
-      hp: 60,
-      maxHp: 60,
-      damage: 25,
+      hp: 40,
+      maxHp: 40,
+      damage: 8,
       speed: 110,
-      defense: 5,
+      defense: 3,
       critChance: 0.15,
       critDamage: 1.5,
-      evasion: 0.25, // High evasion
+      evasion: 0.20, // Still has evasion but reduced
       accuracy: 0.95,
       range: 3, // Ranged attacker
     },
@@ -1240,7 +1240,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
         effects: [
           {
             type: 'damage',
-            value: 35,
+            value: 15,
             targetType: 'enemy',
           },
           {
@@ -1355,7 +1355,7 @@ export const ENEMY_TEMPLATES: Record<string, EnemyTemplate> = {
     id: 'bone_construct',
     name: 'Bone Construct',
     type: 'Undead',
-    baseStats: createStats(100, 30, 85),
+    baseStats: createStats(80, 18, 85),
     abilities: [
       {
         id: 'bone_throw',

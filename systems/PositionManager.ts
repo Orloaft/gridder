@@ -55,15 +55,16 @@ export class PositionManager {
       return false;
     }
 
+    // Allow col 8 for off-screen enemies, but not col 9+
+    if (position.col > 8 || position.row >= this.gridHeight || position.col < 0 || position.row < 0) {
+      console.error(`[PositionManager] Cannot initialize ${unitId} at invalid position (${position.row},${position.col}). Grid is ${this.gridHeight}x${this.gridWidth}, col 8 is allowed for off-screen`);
+      return false;
+    }
+
     const key = this.positionKey(position);
     if (this.occupancyGrid.has(key)) {
       const occupant = this.occupancyGrid.get(key);
       console.error(`[PositionManager] Cannot initialize ${unitId} at occupied position ${key} - already occupied by ${occupant}`);
-
-      // Check if this is an invalid position (off-grid)
-      if (position.col >= this.gridWidth || position.row >= this.gridHeight) {
-        console.error(`[PositionManager] Position ${key} is also invalid (off-grid). Grid is ${this.gridHeight}x${this.gridWidth}`);
-      }
       return false;
     }
 
@@ -78,9 +79,13 @@ export class PositionManager {
     };
 
     this.unitStates.set(unitId, state);
-    this.occupancyGrid.set(key, unitId);
+    // Only track occupancy for on-grid positions (col < 8)
+    // Off-screen positions (col 8) don't need occupancy tracking
+    if (position.col < 8) {
+      this.occupancyGrid.set(key, unitId);
+    }
 
-    console.log(`[PositionManager] Initialized ${unitId} at (${position.row},${position.col})`);
+    console.log(`[PositionManager] Initialized ${unitId} at (${position.row},${position.col})${position.col === 8 ? ' (off-screen)' : ''}`);
     return true;
   }
 
@@ -100,16 +105,18 @@ export class PositionManager {
       return false;
     }
 
-    // Check if destination is occupied by another unit
+    // Check if destination is occupied by another unit (only for on-grid positions)
     const destKey = this.positionKey(to);
-    const occupant = this.occupancyGrid.get(destKey);
-    if (occupant && occupant !== unitId) {
-      return false;
+    if (to.col < 8) {  // Only check occupancy for on-grid positions
+      const occupant = this.occupancyGrid.get(destKey);
+      if (occupant && occupant !== unitId) {
+        return false;
+      }
     }
 
-    // Clear old position
+    // Clear old position (only if it was on-grid)
     const oldKey = this.positionKey(state.logicalPosition);
-    if (this.occupancyGrid.get(oldKey) === unitId) {
+    if (state.logicalPosition.col < 8 && this.occupancyGrid.get(oldKey) === unitId) {
       this.occupancyGrid.delete(oldKey);
     }
 
@@ -120,8 +127,10 @@ export class PositionManager {
     state.isAnimating = false;
     state.transactionId = null;
 
-    // Occupy new position
-    this.occupancyGrid.set(destKey, unitId);
+    // Occupy new position (only if on-grid)
+    if (to.col < 8) {
+      this.occupancyGrid.set(destKey, unitId);
+    }
 
     return true;
   }
@@ -175,10 +184,13 @@ export class PositionManager {
       return null;
     }
 
-    const destKey = this.positionKey(to);
-    if (this.occupancyGrid.has(destKey)) {
-      console.log(`[PositionManager] Destination (${to.row},${to.col}) occupied for ${unitId}`);
-      return null;
+    // Only check occupancy for on-grid destinations
+    if (to.col < 8) {
+      const destKey = this.positionKey(to);
+      if (this.occupancyGrid.has(destKey)) {
+        console.log(`[PositionManager] Destination (${to.row},${to.col}) occupied for ${unitId}`);
+        return null;
+      }
     }
 
     // Create transaction
@@ -209,17 +221,20 @@ export class PositionManager {
    * Reserve a position for a transaction
    */
   private reservePosition(transaction: MoveTransaction): boolean {
-    const destKey = this.positionKey(transaction.to);
+    // Only reserve on-grid positions
+    if (transaction.to.col < 8) {
+      const destKey = this.positionKey(transaction.to);
 
-    // Double-check destination is still free
-    if (this.occupancyGrid.has(destKey)) {
-      transaction.state = 'failed';
-      transaction.error = 'Destination became occupied';
-      return false;
+      // Double-check destination is still free
+      if (this.occupancyGrid.has(destKey)) {
+        transaction.state = 'failed';
+        transaction.error = 'Destination became occupied';
+        return false;
+      }
+
+      // Reserve the destination
+      this.occupancyGrid.set(destKey, transaction.unitId);
     }
-
-    // Reserve the destination
-    this.occupancyGrid.set(destKey, transaction.unitId);
     transaction.state = 'reserved';
 
     return true;
@@ -262,10 +277,12 @@ export class PositionManager {
 
     transaction.state = 'committing';
 
-    // Clear old position
-    const oldKey = this.positionKey(transaction.from);
-    if (this.occupancyGrid.get(oldKey) === transaction.unitId) {
-      this.occupancyGrid.delete(oldKey);
+    // Clear old position (only if it was on-grid)
+    if (transaction.from.col < 8) {
+      const oldKey = this.positionKey(transaction.from);
+      if (this.occupancyGrid.get(oldKey) === transaction.unitId) {
+        this.occupancyGrid.delete(oldKey);
+      }
     }
 
     // Update positions
@@ -493,10 +510,11 @@ export class PositionManager {
 
   /**
    * Helper: Check if position is valid
+   * Allow col 8 for off-screen enemies
    */
   private isValidPosition(pos: GridPosition): boolean {
     return pos.row >= 0 && pos.row < this.gridHeight &&
-           pos.col >= 0 && pos.col < this.gridWidth;
+           pos.col >= 0 && pos.col <= 8;  // Allow col 8 for off-screen
   }
 
   /**

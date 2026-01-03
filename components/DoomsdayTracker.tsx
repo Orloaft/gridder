@@ -12,15 +12,47 @@ export function DoomsdayTracker({ position = 'top', expanded = false }: Doomsday
   const [state, setState] = useState(doomsdaySystem.getState());
   const [showDetails, setShowDetails] = useState(expanded);
   const [pulseAnimation, setPulseAnimation] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
+  const [autoExpandTimer, setAutoExpandTimer] = useState<NodeJS.Timeout | null>(null);
+  const [previousProgress, setPreviousProgress] = useState(doomsdaySystem.getState().ritualProgress);
+  const [previousDay, setPreviousDay] = useState(doomsdaySystem.getState().currentDay);
 
-  // Update state periodically
+  // Update state periodically and check for changes
   useEffect(() => {
     const interval = setInterval(() => {
-      setState(doomsdaySystem.getState());
+      const newState = doomsdaySystem.getState();
+
+      // Check if progress or day changed
+      if (newState.ritualProgress !== previousProgress || newState.currentDay !== previousDay) {
+        // Auto-expand on change
+        setIsMinimized(false);
+
+        // Clear any existing timer
+        if (autoExpandTimer) {
+          clearTimeout(autoExpandTimer);
+        }
+
+        // Set timer to minimize again after 5 seconds
+        const timer = setTimeout(() => {
+          setIsMinimized(true);
+        }, 5000);
+        setAutoExpandTimer(timer);
+
+        // Update previous values
+        setPreviousProgress(newState.ritualProgress);
+        setPreviousDay(newState.currentDay);
+      }
+
+      setState(newState);
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      clearInterval(interval);
+      if (autoExpandTimer) {
+        clearTimeout(autoExpandTimer);
+      }
+    };
+  }, [previousProgress, previousDay, autoExpandTimer]);
 
   // Trigger pulse animation on critical moments
   useEffect(() => {
@@ -60,6 +92,58 @@ export function DoomsdayTracker({ position = 'top', expanded = false }: Doomsday
     return 'text-purple-400';
   };
 
+  // Handle manual expand/collapse
+  const toggleMinimized = () => {
+    // Clear auto-minimize timer if manually interacting
+    if (autoExpandTimer) {
+      clearTimeout(autoExpandTimer);
+      setAutoExpandTimer(null);
+    }
+    setIsMinimized(!isMinimized);
+  };
+
+  // Minimized bar component
+  if (isMinimized) {
+    return (
+      <div
+        className={`fixed ${position === 'top' ? 'top-0' : 'bottom-0'} left-0 right-0 z-[1000] transition-all duration-300`}
+        style={{ pointerEvents: 'auto' }}
+      >
+        <div
+          className={`${getUrgencyColor()} border-b-2 backdrop-blur-md bg-opacity-90 cursor-pointer hover:bg-opacity-100 transition-all`}
+          onClick={toggleMinimized}
+        >
+          <div className="container mx-auto px-4 py-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-white text-sm">
+                <span className="font-bold">Day {state.currentDay}</span>
+                <span className="opacity-70">•</span>
+                <span>{state.antagonistName}'s Ritual: {state.ritualProgress.toFixed(1)}%</span>
+                {urgencyLevel === 'critical' && (
+                  <span className="animate-pulse text-red-400 font-bold ml-2">⚠️ CRITICAL</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-white text-sm">
+                  {daysRemaining} days remaining
+                </span>
+                <svg
+                  className="w-4 h-4 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Full expanded view
   return (
     <div
       className={`fixed ${position === 'top' ? 'top-0' : 'bottom-0'} left-0 right-0 z-[1000] transition-all duration-300`}
@@ -115,19 +199,36 @@ export function DoomsdayTracker({ position = 'top', expanded = false }: Doomsday
                 </div>
               </div>
 
-              <button
-                onClick={() => setShowDetails(!showDetails)}
-                className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded transition-colors"
-              >
-                <svg
-                  className={`w-5 h-5 transform transition-transform ${showDetails ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowDetails(!showDetails)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded transition-colors"
+                  title="Toggle details"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+                  <svg
+                    className={`w-5 h-5 transform transition-transform ${showDetails ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={toggleMinimized}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded transition-colors"
+                  title="Minimize"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 

@@ -50,6 +50,7 @@ export const ICON_PATHS = {
   swordman: '/icons/swordman.PNG',
   torchman: '/icons/torchman.PNG',
   warCleric: '/icons/warcleric.PNG',
+  armoredArcher: '/icons/armoredarcher.PNG',
 
   // Enemies
   bat: '/icons/bat.PNG',

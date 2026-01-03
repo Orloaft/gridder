@@ -26,7 +26,8 @@ export function useResponsiveGrid(): ResponsiveGridDimensions {
     const calculateDimensions = () => {
       // Get viewport dimensions with some padding
       const viewportWidth = window.innerWidth - 64; // 32px padding on each side
-      const viewportHeight = window.innerHeight - 64; // 32px padding top/bottom
+      // Account for DoomsdayTracker at top (approx 40px when minimized) and reduce bottom padding
+      const viewportHeight = window.innerHeight - 80; // 40px top (tracker) + 40px padding
 
       // Main grid is 8x8
       const mainGridRows = 8;

@@ -65,6 +65,9 @@ export class DeterministicBattleSimulatorV2 {
    * This is the main entry point that matches the original BattleSimulator interface
    */
   public simulate(): BattleState {
+    console.error('[DeterministicBattleSimulatorV2] Starting simulation');
+    console.warn('[DeterministicBattleSimulatorV2] Starting simulation');
+
     // Clear previous state
     this.events = [];
     this.currentTick = 0;
@@ -227,6 +230,8 @@ export class DeterministicBattleSimulatorV2 {
         isAlive: true,
         isHero: true
       };
+
+      console.error(`[Initialize Hero] ${hero.name}: HP=${hero.currentStats.hp}/${hero.currentStats.maxHp}, Defense=${hero.currentStats.defense}`);
       this.units.set(hero.instanceId, unit);
       this.setOccupancy(position, hero.instanceId);
     });
@@ -345,8 +350,35 @@ export class DeterministicBattleSimulatorV2 {
             if (enemy.position.col < 8) {
               this.clearOccupancy(enemy.position);
             }
-            enemy.position = targetPos;
-            this.setOccupancy(targetPos, enemy.id);
+
+            // Check if target position is already occupied
+            if (this.isOccupied(targetPos)) {
+              // Find an alternative position
+              console.warn(`[spawnWave] Position ${targetPos.row},${targetPos.col} is occupied, finding alternative for ${enemy.name}`);
+              // Try adjacent columns first
+              for (let colOffset = 1; colOffset <= 2; colOffset++) {
+                const altCol = targetPos.col - colOffset;
+                if (altCol >= 4 && !this.isOccupied({ row: targetPos.row, col: altCol })) {
+                  enemy.position = { row: targetPos.row, col: altCol };
+                  this.setOccupancy(enemy.position, enemy.id);
+                  break;
+                }
+              }
+              // If still no position found, try different rows
+              if (this.isOccupied(enemy.position) || enemy.position.col >= 8) {
+                for (let rowOffset = 1; rowOffset <= 3; rowOffset++) {
+                  const altRow = (targetPos.row + rowOffset) % 8;
+                  if (!this.isOccupied({ row: altRow, col: targetPos.col })) {
+                    enemy.position = { row: altRow, col: targetPos.col };
+                    this.setOccupancy(enemy.position, enemy.id);
+                    break;
+                  }
+                }
+              }
+            } else {
+              enemy.position = targetPos;
+              this.setOccupancy(targetPos, enemy.id);
+            }
           }
 
           return {
@@ -433,10 +465,12 @@ export class DeterministicBattleSimulatorV2 {
     const usableAbility = this.findUsableAbility(unit, nearestEnemy, enemies, allies);
 
     if (usableAbility) {
+      console.log(`[Ability Use] ${unit.name} preparing to use ${usableAbility.ability.name} on ${usableAbility.targets.map(t => t.name).join(', ')}`);
       // Use ability
       this.useAbility(unit, usableAbility.ability, usableAbility.targets);
       // Set ability cooldown
       unit.abilityCooldowns.set(usableAbility.ability.id, usableAbility.ability.cooldown);
+      console.log(`[Ability Cooldown] Set ${usableAbility.ability.name} cooldown to ${usableAbility.ability.cooldown}`);
     } else if (distance > 1) {
       // Move closer
       const newPos = this.findMovePosition(unit, nearestEnemy);
@@ -470,6 +504,8 @@ export class DeterministicBattleSimulatorV2 {
       // Basic attack
       const damage = Math.max(1, unit.stats.damage - Math.floor(nearestEnemy.stats.defense * 0.3));
 
+      console.log(`[Basic Attack] ${unit.name} attacks ${nearestEnemy.name}: baseDamage=${unit.stats.damage}, defense=${nearestEnemy.stats.defense}, final=${damage}, targetHP=${nearestEnemy.stats.hp}`);
+
       // Add attack event
       this.events.push({
         type: BattleEventType.Attack,
@@ -485,6 +521,8 @@ export class DeterministicBattleSimulatorV2 {
 
       // Apply damage
       nearestEnemy.stats.hp -= damage;
+
+      console.log(`[Basic Attack Result] ${nearestEnemy.name} HP after: ${nearestEnemy.stats.hp}`);
 
       // Add damage event
       this.events.push({
@@ -563,11 +601,34 @@ export class DeterministicBattleSimulatorV2 {
     });
 
     // Process ability effects
+    let totalDamageDealt = 0; // Track total damage for lifesteal
+
     for (const effect of ability.effects) {
-      for (const target of targets) {
+      // Determine actual targets based on effect targetType
+      const actualTargets = effect.targetType === 'self' ? [caster] : targets;
+
+      for (const target of actualTargets) {
         if (effect.type === 'damage' && effect.value) {
-          const damage = effect.value;
+          // Apply defense reduction to ability damage similar to basic attacks
+          const rawDamage = effect.value;
+          const damage = Math.max(1, rawDamage - Math.floor(target.stats.defense * 0.3));
+
+          // Check if this is the one-shot bug
+          if (target.name.includes('Adventurer') && damage < 50 && target.stats.hp > 50) {
+            console.error(`[BUG DETECTED] Wraith about to one-shot ${target.name}!`);
+            console.error(`  Raw damage: ${rawDamage}`);
+            console.error(`  Defense: ${target.stats.defense}`);
+            console.error(`  Final damage: ${damage}`);
+            console.error(`  Target HP before: ${target.stats.hp}`);
+            console.error(`  This should NOT kill the target!`);
+          }
+
+          console.error(`[Ability Damage] ${caster.name} uses ${ability.name} on ${target.name}: raw=${rawDamage}, defense=${target.stats.defense}, final=${damage}, targetHP before=${target.stats.hp}`);
+
           target.stats.hp -= damage;
+          totalDamageDealt += damage; // Track for lifesteal
+
+          console.log(`[Ability Damage Result] ${target.name} HP after damage: ${target.stats.hp} (took ${damage} damage)`);
 
           // Add damage event
           this.events.push({
@@ -585,6 +646,7 @@ export class DeterministicBattleSimulatorV2 {
 
           // Check for death
           if (target.stats.hp <= 0) {
+            console.log(`[Death] ${target.name} died! HP was ${target.stats.hp} after taking ${damage} damage`);
             target.isAlive = false;
             this.clearOccupancy(target.position);
 
@@ -611,6 +673,26 @@ export class DeterministicBattleSimulatorV2 {
                 unitId: target.id,
                 amount: healing,
                 source: ability.name
+              }
+            });
+          }
+        } else if (effect.type === 'lifesteal' && effect.value && totalDamageDealt > 0) {
+          // Lifesteal healing for the caster based on actual damage dealt
+          const healAmount = Math.floor(totalDamageDealt * effect.value);
+          const actualHeal = Math.min(healAmount, caster.stats.maxHp - caster.stats.hp);
+
+          console.log(`[Lifesteal] ${caster.name} heals for ${actualHeal} (${effect.value * 100}% of ${totalDamageDealt} damage)`);
+
+          if (actualHeal > 0) {
+            caster.stats.hp += actualHeal;
+            this.events.push({
+              type: BattleEventType.Heal,
+              tick: this.currentTick,
+              data: {
+                unit: caster.name,
+                unitId: caster.id,
+                amount: actualHeal,
+                source: `${ability.name} (lifesteal)`
               }
             });
           }

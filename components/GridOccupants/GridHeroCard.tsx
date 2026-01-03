@@ -12,6 +12,7 @@ export interface GridHeroCardProps {
 
 export function GridHeroCard({ hero, cellSize }: GridHeroCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [isDragOver, setIsDragOver] = React.useState(false);
   const hpPercentage = (hero.hp / hero.maxHp) * 100;
   const cooldownPercentage = hero.cooldown ?? 0;
   const isImageSprite = hero.spritePath?.startsWith('/icons/');
@@ -65,17 +66,37 @@ export function GridHeroCard({ hero, cellSize }: GridHeroCardProps) {
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!hero.draggable && !hero.onDrop) return;
+    // Allow drop if hero can accept hero drops OR item drops
+    if (!hero.draggable && !hero.onDrop && !hero.onItemDrop) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    setIsDragOver(true);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!hero.onDrop && !hero.onItemDrop) return;
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    setIsDragOver(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragOver(false);
 
     // Check if dropping an item
     const itemId = e.dataTransfer.getData('itemId');
+    console.log('[GridHeroCard] Drop event:', {
+      itemId,
+      hasOnItemDrop: !!hero.onItemDrop,
+      heroName: hero.name
+    });
+
     if (itemId && hero.onItemDrop) {
+      console.log('[GridHeroCard] Calling onItemDrop with itemId:', itemId);
       hero.onItemDrop(itemId);
       return;
     }
@@ -102,10 +123,12 @@ export function GridHeroCard({ hero, cellSize }: GridHeroCardProps) {
       draggable={hero.draggable}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={handleClick}
-      className={`relative w-full h-full bg-gradient-to-br from-blue-900 to-blue-700 border-2 border-blue-400 rounded-lg overflow-hidden hover:border-blue-300 transition-colors shadow-lg hover:shadow-blue-500/50 ${hero.draggable ? 'cursor-move' : ''} ${hero.onClick ? 'cursor-pointer' : ''}`}
+      className={`relative w-full h-full bg-gradient-to-br from-blue-900 to-blue-700 border-2 ${isDragOver ? 'border-yellow-400 ring-2 ring-yellow-400' : 'border-blue-400'} rounded-lg overflow-hidden hover:border-blue-300 transition-colors shadow-lg hover:shadow-blue-500/50 ${hero.draggable ? 'cursor-move' : ''} ${hero.onClick ? 'cursor-pointer' : ''}`}
       style={{ opacity: 0, transform: 'scale(0)', fontSize: cellSize * 0.12 }}
     >
       {/* Hero sprite - fills entire tile */}

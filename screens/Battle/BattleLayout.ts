@@ -133,7 +133,7 @@ export function createBattleLayout(
       occupants.push({
         id: 'btn-retreat-wave',
         type: GridOccupantType.Button,
-        position: { row: 7, col: 2 },
+        position: { row: 7, col: 1 },
         label: 'Retreat',
         icon: '←',
         variant: 'secondary',
@@ -147,11 +147,31 @@ export function createBattleLayout(
         animationDelay: 0.8,
       });
 
+      // Inventory button - NEW!
+      occupants.push({
+        id: 'btn-inventory-wave',
+        type: GridOccupantType.Button,
+        position: { row: 7, col: 3 },
+        width: 2,
+        label: 'Manage Items',
+        icon: '🎒',
+        variant: 'primary',
+        description: 'Equip items from your inventory to prepare for the next wave',
+        onClick: () => {
+          // Open inventory management UI
+          const gameState = useGameStore.getState();
+          console.log('[Battle] Opening battle inventory management');
+          // Navigate to battle inventory screen
+          gameState.navigate(ScreenType.BattleInventory);
+        },
+        animationDelay: 0.85,
+      });
+
       // Proceed button
       occupants.push({
         id: 'btn-proceed-wave',
         type: GridOccupantType.Button,
-        position: { row: 7, col: 5 },
+        position: { row: 7, col: 6 },
         label: nextWaveIsBoss ? 'Face Boss' : 'Continue',
         icon: '→',
         variant: 'primary',

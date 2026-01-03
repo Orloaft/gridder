@@ -118,22 +118,22 @@ export function getDefaultLootConfig(difficulty: 'tutorial' | 'easy' | 'medium' 
   switch (difficulty) {
     case 'tutorial':
       return {
-        itemDropChance: 0.30, // 30% chance (increased from 15%)
+        itemDropChance: 0.50, // 50% chance - good chance even in tutorial
         maxRarity: Rarity.Common,
       };
     case 'easy':
       return {
-        itemDropChance: 0.45, // 45% chance (increased from 25%)
+        itemDropChance: 0.70, // 70% chance - very likely to get items
         maxRarity: Rarity.Uncommon,
       };
     case 'medium':
       return {
-        itemDropChance: 0.60, // 60% chance (increased from 35%)
+        itemDropChance: 0.85, // 85% chance - almost always drops
         maxRarity: Rarity.Rare,
       };
     case 'hard':
       return {
-        itemDropChance: 0.75, // 75% chance (increased from 50%)
+        itemDropChance: 0.95, // 95% chance - nearly guaranteed
         maxRarity: Rarity.Legendary,
       };
     case 'boss':

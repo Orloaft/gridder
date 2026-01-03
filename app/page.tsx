@@ -478,7 +478,8 @@ export default function Home() {
       {/* Main Game - always rendered, background always visible */}
       <div
         ref={screenRef}
-        className={`min-h-screen ${getBackgroundClass()} flex items-center justify-center p-8 gap-8 transition-colors duration-700 ${showGrid ? 'pt-20' : ''}`}
+        className={`min-h-screen ${getBackgroundClass()} flex items-start justify-center px-8 gap-8 transition-colors duration-700 ${showGrid ? 'pt-14 pb-2' : 'p-8'}`}
+        style={showGrid ? { alignItems: 'flex-start', paddingTop: '3.5rem' } : {}}
       >
         {/* Left Panel - shows different content based on screen */}
         {showGrid && (

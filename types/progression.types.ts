@@ -16,6 +16,8 @@ export enum ScreenType {
   Defeat = 'defeat',
   AbilitySelection = 'abilitySelection',
   RewardReveal = 'rewardReveal',
+  LevelUpChoice = 'levelUpChoice',
+  BattleInventory = 'battleInventory',
 }
 
 // Stage node for campaign map

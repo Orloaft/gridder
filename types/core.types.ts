@@ -220,11 +220,12 @@ export interface Item {
   description: string;
   rarity: Rarity;
   category: ItemCategory; // Weapon, Armor, Accessory, or Consumable
+  type?: 'equipment' | 'consumable'; // Item type for filtering
   effects: ItemEffect[];
   icon?: string; // Icon path (e.g., '/icons/sword.png')
   spritePath: string; // Deprecated: use icon instead
   cost: number; // Vendor sell price
-  slot: 'weapon' | 'armor' | 'accessory'; // Equipment slot
+  slot: 'weapon' | 'armor' | 'accessory' | 'consumable'; // Equipment slot
   consumable?: boolean; // If true, item is consumed after one use
   permanent?: boolean; // If true, effects are permanent (default: only active when equipped)
   maxDurability?: number; // Max durability (3/5/7/10 by rarity), undefined for Mythic (infinite)
