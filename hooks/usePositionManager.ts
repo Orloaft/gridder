@@ -26,7 +26,13 @@ export function usePositionManager() {
       animationCoordinatorRef.current = new AnimationCoordinator(positionManagerRef.current);
 
       // Initialize with current battle units
+      // Add a small delay to ensure battle state is fully updated after wave transitions
       const allUnits = [...currentBattle.heroes, ...currentBattle.enemies];
+
+      console.log('[usePositionManager] === Battle State Hero Positions ===');
+      currentBattle.heroes.forEach(hero => {
+        console.log(`[usePositionManager] ${hero.name}: battle state position (${hero.position.row},${hero.position.col})`);
+      });
 
       // Debug: Check for invalid positions before initializing
       // Note: col:8 is valid for off-screen enemies that will slide in

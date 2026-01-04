@@ -20,7 +20,7 @@ export function createBattleLayout(
   const isVictory = battleFinished && battleState.winner === 'heroes';
 
   // Check if we're at a wave transition pause
-  const currentEvent = battleState.events[currentEventIndex];
+  let currentEvent = battleState.events[currentEventIndex];
   const isWaveTransition = currentEvent?.type === BattleEventType.WaveComplete;
 
   console.log('[BattleLayout] Battle state check:', {
@@ -37,7 +37,24 @@ export function createBattleLayout(
   });
 
   // WAVE TRANSITION SCREEN - Show decision UI between waves
-  if (isWaveTransition && currentEvent) {
+  // Show this UI when we're paused after a wave transition has been applied
+  const prevEvent = currentEventIndex > 0 ? battleState.events[currentEventIndex - 1] : null;
+  const justCompletedWaveTransition = prevEvent?.type === BattleEventType.WaveTransition;
+
+  console.log('[BattleLayout] Checking for pause state:', {
+    currentEventIndex,
+    totalEvents: battleState.events.length,
+    prevEventType: prevEvent?.type,
+    justCompletedWaveTransition,
+    currentWave: battleState.currentWave,
+    totalWaves: battleState.totalWaves,
+    winner: battleState.winner
+  });
+
+  if (justCompletedWaveTransition && prevEvent) {
+    console.log('[BattleLayout] ✅ Detected wave transition pause - showing formation UI');
+    // Use the previous wave transition event for data
+    currentEvent = prevEvent;
     const state = useGameStore.getState();
     const stage = state.selectedStageId ? getStageById(state.selectedStageId) : null;
 
@@ -153,10 +170,10 @@ export function createBattleLayout(
         type: GridOccupantType.Button,
         position: { row: 7, col: 3 },
         width: 2,
-        label: 'Manage Items',
-        icon: '🎒',
+        label: 'Manage Formation',
+        icon: '⚔️',
         variant: 'primary',
-        description: 'Equip items from your inventory to prepare for the next wave',
+        description: 'Reposition heroes and equip items for the next wave',
         onClick: () => {
           // Open inventory management UI
           const gameState = useGameStore.getState();
@@ -225,8 +242,16 @@ export function createBattleLayout(
   // Note: Retreat button removed - retreat decisions are now made during wave transitions
 
   // Heroes - use their current positions from battle state
+  console.log(`[BattleLayout] === BATTLE LAYOUT HERO POSITIONS (Wave ${battleState.currentWave}) ===`);
   battleState.heroes.forEach((hero, index) => {
     if (!hero.isAlive) return; // Don't render dead units
+
+    console.log(`[BattleLayout] ${hero.name}: battleState position (${hero.position.row},${hero.position.col})`);
+
+    // Debug hero positions after wave transitions
+    if (battleState.currentWave >= 3) {
+      console.log(`[BattleLayout] Rendering hero ${hero.name} at position (${hero.position.row},${hero.position.col})`);
+    }
 
     // Debug first hero position
     if (index === 0 && currentEventIndex < 5) {

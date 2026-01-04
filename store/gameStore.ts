@@ -7,6 +7,7 @@ import { createMainMenuLayout } from '@/screens/MainMenu/MainMenuLayout';
 import { createLocationMapLayout } from '@/screens/LocationMap/LocationMapLayout';
 import { createCampaignMapLayout } from '@/screens/CampaignMap/CampaignMapLayout';
 import { createPreBattleLayout } from '@/screens/PreBattle/PreBattleLayout';
+import { createFormationPreBattleLayout } from '@/screens/PreBattle/FormationPreBattleLayout';
 import { createBattleLayout } from '@/screens/Battle/BattleLayout';
 import { createHeroRosterLayout } from '@/screens/HeroRoster/HeroRosterLayout';
 import { createHeroMenuLayout } from '@/screens/HeroMenu/HeroMenuLayout';
@@ -14,7 +15,7 @@ import { createShopLayout } from '@/screens/Shop/ShopLayout';
 import { createAbilitySelectionLayout } from '@/screens/AbilitySelection/AbilitySelectionLayout';
 import { createRewardRevealLayout } from '@/screens/RewardReveal/RewardRevealLayout';
 import { createLevelUpChoiceLayout, generateLevelUpChoices } from '@/screens/LevelUpChoice/LevelUpChoiceLayout';
-import { createBattleInventoryLayout } from '@/screens/BattleInventory/BattleInventoryLayout';
+import { createBattleFormationLayout } from '@/screens/BattleInventory/BattleFormationLayout';
 import { createHeroInstance, createEnemyInstance, getHeroGemCost, LEARNABLE_ABILITIES, HERO_LEARNABLE_ABILITIES } from '@/data/units';
 import { getStageById, getNextUnlockedStage } from '@/data/stages';
 import { getLocationByStageId } from '@/data/locations';
@@ -51,12 +52,17 @@ interface GameStore extends GameState {
 
   // Pre-Battle state
   preBattleTeam: string[]; // Hero instance IDs for current battle
+  heroFormation: { [heroId: string]: { row: number; col: number } }; // Hero positions on grid
+  isFormationUserModified: boolean; // Whether user has manually modified the formation
   setPreBattleTeam: (heroIds: string[]) => void;
   addHeroToPreBattle: (heroId: string) => void;
   removeHeroFromPreBattle: (heroId: string) => void;
+  setHeroFormation: (heroId: string, row: number, col: number) => void;
+  clearHeroFormation: () => void;
 
   // Battle state
   currentBattle: BattleState | null;
+  initialBattleTeam: string[]; // Heroes that started the battle (cannot add new ones mid-battle)
   battleEventIndex: number;
   battleSpeed: number; // Speed multiplier (1 = normal, 4 = 4x speed, 8 = 8x speed)
   setBattleSpeed: (speed: number) => void;
@@ -182,7 +188,10 @@ const initialState = {
   selectedLocationId: null as string | null,
   selectedStageId: null as number | null,
   preBattleTeam: [] as string[],
+  heroFormation: {} as { [heroId: string]: { row: number; col: number } },
+  isFormationUserModified: false,
   currentBattle: null as BattleState | null,
+  initialBattleTeam: [] as string[],
   battleEventIndex: 0,
   battleSpeed: 1,
   useDeterministicBattle: true, // Set to true to enable deterministic battle system V2
@@ -312,18 +321,46 @@ export const useGameStore = create<GameStore>()(
               set({ preBattleTeam: validTeam });
             }
 
-            newOccupants = createPreBattleLayout(
+            // Use formation-based pre-battle layout
+            newOccupants = createFormationPreBattleLayout(
               stage,
-              state.player.gold,
               state.player.gems,
               validTeam,
               state.roster,
+              state.heroFormation,
               state.navigate,
-              state.addHeroToPreBattle,
-              state.removeHeroFromPreBattle,
+              (heroId: string, row: number, col: number) => {
+                // Add to formation and team if not already in team
+                const newFormation = { ...state.heroFormation };
+                newFormation[heroId] = { row, col };
+                set({ heroFormation: newFormation });
+
+                // Add to preBattleTeam if not already in it
+                if (!state.preBattleTeam.includes(heroId)) {
+                  const newTeam = [...state.preBattleTeam, heroId];
+                  set({ preBattleTeam: newTeam });
+                  console.log(`[PreBattle] Added ${heroId} to team`);
+                }
+
+                state.navigate(ScreenType.PreBattle);
+              },
+              (heroId: string) => {
+                // Remove from formation and team when clicked
+                const newFormation = { ...state.heroFormation };
+                delete newFormation[heroId];
+                set({ heroFormation: newFormation });
+
+                // Remove from preBattleTeam
+                const newTeam = state.preBattleTeam.filter(id => id !== heroId);
+                set({ preBattleTeam: newTeam });
+                console.log(`[PreBattle] Removed ${heroId} from team`);
+
+                state.navigate(ScreenType.PreBattle);
+              },
+              state.equipItem,
               state.startBattle,
-              state.setPreBattleTeam,
-              state.equipItem
+              state.gridRows,
+              state.gridCols
             );
           }
         } else if (screen === ScreenType.Battle && state.currentBattle) {
@@ -389,17 +426,89 @@ export const useGameStore = create<GameStore>()(
             console.error('[Navigate LevelUpChoice] Hero not found for ID:', state.levelUpHeroId);
           }
         } else if (screen === ScreenType.BattleInventory) {
-          // Battle inventory management screen
+          // Battle formation management screen (between waves)
           // Get heroes with their current battle HP if in battle
           let battleHeroes = state.preBattleTeam
             .map(heroId => state.roster.find(h => h.instanceId === heroId))
             .filter(h => h !== undefined) as Hero[];
 
-          // If we're in a battle, sync HP from battle state
+          // Preserve user's formation if they have modified it, otherwise use current battle positions
+          let currentFormation = {};
+
+          // Debug: Check formation initialization conditions
+          console.log('[BattleInventory] Formation initialization check:', {
+            hasBattle: !!state.currentBattle,
+            isUserModified: state.isFormationUserModified,
+            hasExistingFormation: !!state.heroFormation && Object.keys(state.heroFormation).length > 0,
+            formationKeys: Object.keys(state.heroFormation || {})
+          });
+
+          // Check if we need to initialize formation for the current wave
+          // Formation UI manages the formation for the CURRENT wave (the one that just started)
+          const currentWave = state.currentBattle?.currentWave || 1;
+          const formationWaveKey = `wave_${currentWave}`;
+          const isCurrentWaveFormation = state.heroFormation && state.heroFormation._waveKey === formationWaveKey;
+
+          if (state.currentBattle && !isCurrentWaveFormation && !state.isFormationUserModified) {
+            // Only initialize formation from battle state if user hasn't made custom changes
+            // Simple approach: Just show where heroes currently are
+            // The wave transition has already been applied when we enter the formation UI
+
+            // Log all hero positions from the battle state for debugging
+            console.log('[BattleInventory] === Hero Positions from Battle State ===');
+            state.currentBattle.heroes.forEach(hero => {
+              // Include heroes that are alive AND were part of the initial battle team
+              // Dead heroes should not appear in formation for next wave
+              if (state.initialBattleTeam.includes(hero.instanceId) && hero.isAlive) {
+                const positionToSet = {
+                  row: hero.position.row,
+                  col: hero.position.col
+                };
+                currentFormation[hero.instanceId] = positionToSet;
+                console.log(`[BattleInventory] Setting ${hero.name}: (${hero.position.row},${hero.position.col}) - ID: ${hero.instanceId} - Alive: ${hero.isAlive}`);
+                console.log(`[BattleInventory] Verification - currentFormation[${hero.instanceId}]:`, currentFormation[hero.instanceId]);
+              }
+            });
+            console.log('[BattleInventory] === End Battle State Positions ===');
+
+            console.log('[BattleInventory] Formation initialized from current positions');
+
+            // Set the formation state so future renders use the updated positions
+            const formationWithWaveKey = { ...currentFormation, _waveKey: formationWaveKey };
+            console.log('[BattleInventory] About to set heroFormation state:', formationWithWaveKey);
+            set({
+              heroFormation: formationWithWaveKey,
+              isFormationUserModified: true // Mark as initialized - prevent re-initialization on subsequent renders
+            });
+
+            console.log('[BattleInventory] Set formation state to match battle positions');
+            // Verify what was actually set
+            const newState = get();
+            console.log('[BattleInventory] Verification - state.heroFormation after set:', newState.heroFormation);
+          } else if (state.heroFormation && state.isFormationUserModified) {
+            // User has custom formation but wrong wave key - preserve the formation data with new key
+            console.log('[BattleInventory] Preserving user custom formation with updated wave key');
+            const existingFormation = { ...state.heroFormation };
+            delete existingFormation._waveKey; // Remove old wave key
+            currentFormation = existingFormation;
+
+            // Update the wave key
+            const formationWithWaveKey = { ...currentFormation, _waveKey: formationWaveKey };
+            set({ heroFormation: formationWithWaveKey });
+            console.log('[BattleInventory] Updated formation wave key from', state.heroFormation._waveKey, 'to', formationWaveKey);
+          } else if (state.heroFormation) {
+            console.log('[BattleInventory] Using existing formation from state');
+            currentFormation = { ...state.heroFormation };
+          } else {
+            console.log('[BattleInventory] No formation available - this should not happen');
+          }
+
+          // Sync HP from battle state
           if (state.currentBattle) {
             battleHeroes = battleHeroes.map(hero => {
               const battleHero = state.currentBattle.heroes.find(h => h.instanceId === hero.instanceId);
               if (battleHero) {
+
                 return {
                   ...hero,
                   currentStats: {
@@ -411,15 +520,120 @@ export const useGameStore = create<GameStore>()(
               }
               return hero;
             });
+
+            // Filter out dead heroes - only show heroes that are still alive for formation
+            battleHeroes = battleHeroes.filter(hero => {
+              const battleHero = state.currentBattle.heroes.find(h => h.instanceId === hero.instanceId);
+              return battleHero && battleHero.isAlive;
+            });
           }
 
-          newOccupants = createBattleInventoryLayout(
-            battleHeroes,
-            state.inventory,
-            state.equipItem,
-            state.unequipItem,
-            state.useConsumable,
-            () => {
+          // Use the current formation data (either initialized or existing)
+          const finalFormation = isCurrentWaveFormation ? state.heroFormation : currentFormation;
+          console.log('[BattleInventory] Final formation source - isCurrentWaveFormation:', isCurrentWaveFormation, 'waveKey:', formationWaveKey);
+          console.log('[BattleInventory] currentFormation:', currentFormation);
+          console.log('[BattleInventory] state.heroFormation:', state.heroFormation);
+          console.log('[BattleInventory] finalFormation (used for layout):', finalFormation);
+          console.log('[BattleInventory] === Detailed Final Formation ===');
+          Object.entries(finalFormation).forEach(([heroId, pos]) => {
+            const heroName = state.roster.find(h => h.instanceId === heroId)?.name || 'Unknown';
+            console.log(`[BattleInventory] ${heroName}: (${pos.row},${pos.col})`);
+          });
+          console.log('[BattleInventory] === End Detailed Final Formation ===');
+
+          // Define callback functions
+          const onHeroPositionChange = (heroId: string, row: number, col: number) => {
+              // Only allow repositioning heroes that were part of the initial team
+              if (!state.initialBattleTeam.includes(heroId)) {
+                console.log(`[BattleInventory] Cannot add ${heroId} - not part of initial battle team`);
+                return;
+              }
+
+              // The position we receive is the final display position where user wants hero
+              // Store it directly since we're now tracking final positions
+              const freshState = get();
+              const newFormation = { ...freshState.heroFormation };
+              newFormation[heroId] = { row, col };
+              set({ heroFormation: newFormation });
+
+              console.log(`[BattleInventory] Updated formation for ${heroId}: final position (${row}, ${col})`);
+
+              // Mark that user has modified the formation
+              set({ isFormationUserModified: true });
+
+              // Check if this hero is being re-added to battle
+              const isReturning = !state.preBattleTeam.includes(heroId);
+              if (isReturning) {
+                // Re-add hero to battle team (but don't change position yet)
+                const newTeam = [...state.preBattleTeam, heroId];
+                set({ preBattleTeam: newTeam });
+                console.log(`[BattleInventory] Re-added ${heroId} to team - will join at wave transition`);
+              }
+
+              // Update the local formation reference and regenerate layout
+              currentFormation = newFormation;
+
+              // Regenerate the layout with the updated formation
+              const updatedOccupants = createBattleFormationLayout(
+                battleHeroes,
+                state.roster,
+                state.inventory,
+                newFormation,
+                state.initialBattleTeam,
+                onHeroPositionChange, // Use the same callback
+                onHeroRemove, // Use the same callback
+                state.equipItem,
+                state.unequipItem,
+                state.useConsumable,
+                onBackToLanding, // Use the same callback
+                state.gridRows,
+                state.gridCols
+              );
+
+              set({ gridOccupants: updatedOccupants });
+          };
+
+          const onHeroRemove = (heroId: string) => {
+              // Remove from formation when clicked
+              const newFormation = { ...currentFormation };
+              delete newFormation[heroId];
+              // Update both the current formation and the stored formation
+              currentFormation = newFormation;
+              set({ heroFormation: newFormation });
+
+              // Remove from battle team
+              const newTeam = state.preBattleTeam.filter(id => id !== heroId);
+              set({ preBattleTeam: newTeam });
+              console.log(`[BattleInventory] Removed ${heroId} from battle team`);
+
+              // Remove from current battle if in progress
+              if (state.currentBattle) {
+                const index = state.currentBattle.heroes.findIndex(h => h.instanceId === heroId);
+                if (index !== -1) {
+                  const hero = state.currentBattle.heroes[index];
+                  state.currentBattle.heroes.splice(index, 1);
+                  console.log(`[BattleInventory] Removed ${hero.name} from current battle`);
+                }
+              }
+
+              // The state update should trigger re-render automatically
+              console.log('[BattleInventory] *** DRAG UPDATE - Formation updated ***');
+              console.log(`[BattleInventory] Hero ${heroId} moved to (${row},${col})`);
+          };
+
+          const onBackToLanding = () => {
+              console.log('[onBackToLanding] Called - checking formation data');
+
+              // Get fresh state to ensure we're not working with stale data
+              const freshState = get();
+              console.log('[onBackToLanding] Fresh heroFormation state:', freshState.heroFormation);
+              console.log('[onBackToLanding] Fresh isFormationUserModified:', freshState.isFormationUserModified);
+              console.log('[onBackToLanding] State comparison:', {
+                staleState: state.heroFormation,
+                freshState: freshState.heroFormation,
+                areEqual: JSON.stringify(state.heroFormation) === JSON.stringify(freshState.heroFormation)
+              });
+
               // Recalculate hero stats after item changes
               battleHeroes.forEach(hero => {
                 state.recalculateHeroStats(hero.instanceId);
@@ -435,14 +649,78 @@ export const useGameStore = create<GameStore>()(
                     const hpRatio = battleHero.stats.hp / battleHero.stats.maxHp;
                     battleHero.stats = { ...updatedHero.currentStats };
                     battleHero.stats.hp = Math.floor(battleHero.stats.maxHp * hpRatio);
-                    console.log(`[BattleInventory] Updated ${battleHero.name} stats after equipment change`);
+
+                    // Also update position if it changed - use fresh state
+                    const newPosition = freshState.heroFormation[battleHero.instanceId];
+                    console.log(`[onBackToLanding] ${battleHero.name}: checking position update`);
+                    console.log(`[onBackToLanding]   - Current position: (${battleHero.position.row},${battleHero.position.col})`);
+                    console.log(`[onBackToLanding]   - Formation position:`, newPosition);
+                    if (newPosition) {
+                      const oldPosition = { ...battleHero.position };
+                      (battleHero as any).position = newPosition;
+                      console.log(`[onBackToLanding] ✅ Updated ${battleHero.name} position from (${oldPosition.row},${oldPosition.col}) to (${newPosition.row},${newPosition.col})`);
+                    } else {
+                      console.log(`[onBackToLanding] ❌ No formation position found for ${battleHero.name}`);
+                    }
                   }
                 });
               }
 
-              // Go back to battle
+              // Apply formation changes to current battle state
+              if (freshState.isFormationUserModified && freshState.currentBattle) {
+                console.log('[onBackToLanding] Applying formation changes to battle state');
+
+                // Apply formation changes directly to current battle heroes
+                freshState.currentBattle.heroes.forEach(battleHero => {
+                  const formationPos = freshState.heroFormation[battleHero.instanceId];
+                  if (formationPos) {
+                    const oldPos = { ...battleHero.position };
+                    battleHero.position = { ...formationPos };
+                    console.log(`[onBackToLanding] Applied formation: ${battleHero.name} moved from (${oldPos.row},${oldPos.col}) to (${formationPos.row},${formationPos.col})`);
+                  }
+                });
+
+                // Mark formation as applied in upcoming wave transition events
+                // This ensures the animation system uses the custom positions
+                const currentEventIndex = freshState.battleEventIndex;
+                const upcomingEvents = freshState.currentBattle.events.slice(currentEventIndex);
+                const nextWaveTransition = upcomingEvents.find(e => e.type === 'waveTransition');
+                if (nextWaveTransition && nextWaveTransition.data) {
+                  nextWaveTransition.data.customFormationApplied = true;
+                  console.log('[onBackToLanding] Marked next wave transition with custom formation applied');
+                }
+
+                // Clear formation modification flag
+                set({ isFormationUserModified: false });
+
+                console.log('[onBackToLanding] Formation changes applied successfully');
+              }
+
+              // Go back to battle with updated formation
               state.navigate(ScreenType.Battle);
-            }
+          };
+
+          // Final check - log the exact formation data being passed to layout
+          console.log('[BattleInventory] *** FINAL CHECK - Formation passed to layout ***');
+          Object.entries(finalFormation).forEach(([heroId, pos]) => {
+            const heroName = state.roster.find(h => h.instanceId === heroId)?.name || 'Unknown';
+            console.log(`[BattleInventory] FINAL: ${heroName} at (${pos.row},${pos.col})`);
+          });
+
+          newOccupants = createBattleFormationLayout(
+            battleHeroes,
+            state.roster,
+            state.inventory,
+            finalFormation,
+            state.initialBattleTeam,
+            onHeroPositionChange,
+            onHeroRemove,
+            state.equipItem,
+            state.unequipItem,
+            state.useConsumable,
+            onBackToLanding,
+            state.gridRows,
+            state.gridCols
           );
         } else if (screen === ScreenType.RewardReveal && state.pendingRewards) {
           // Reward reveal screen - This will be managed by useRewardReveal hook
@@ -1391,12 +1669,49 @@ export const useGameStore = create<GameStore>()(
         }
       },
 
+      setHeroFormation: (heroId: string, row: number, col: number) => {
+        const state = get();
+
+        // Add hero to team if not already there
+        if (!state.preBattleTeam.includes(heroId)) {
+          const newTeam = [...state.preBattleTeam, heroId];
+          set({ preBattleTeam: newTeam });
+        }
+
+        // Update formation position
+        const newFormation = {
+          ...state.heroFormation,
+          [heroId]: { row, col }
+        };
+
+        // Check if another hero is at this position and swap if needed
+        Object.entries(state.heroFormation).forEach(([otherId, pos]) => {
+          if (otherId !== heroId && pos.row === row && pos.col === col) {
+            // Remove other hero from this position
+            delete newFormation[otherId];
+          }
+        });
+
+        set({ heroFormation: newFormation });
+        console.log(`[Formation] Set hero ${heroId} to position (${row}, ${col})`);
+
+        // Refresh the screen
+        state.navigate(state.currentScreen);
+      },
+
+      clearHeroFormation: () => {
+        set({ heroFormation: {} });
+        console.log('[Formation] Cleared all hero formations');
+      },
+
       // Battle system
       startBattle: () => {
         const state = get();
 
-        if (!state.selectedStageId || state.preBattleTeam.length === 0) {
-          console.error('Cannot start battle: no stage or team selected');
+        // Get heroes from formation instead of preBattleTeam
+        const formationHeroIds = Object.keys(state.heroFormation);
+        if (!state.selectedStageId || formationHeroIds.length === 0) {
+          console.error('Cannot start battle: no stage or heroes in formation');
           return;
         }
 
@@ -1413,19 +1728,39 @@ export const useGameStore = create<GameStore>()(
           state.setGridSize(8, 8);
         }
 
-        // Get selected heroes - limit to stage's playerSlots
-        const selectedHeroIds = state.preBattleTeam.slice(0, stage.playerSlots);
+        // Get selected heroes from formation - limit to stage's playerSlots
+        const selectedHeroIds = formationHeroIds.slice(0, stage.playerSlots);
         const heroes = selectedHeroIds
           .map((heroId) => state.roster.find((h) => h.instanceId === heroId))
           .filter((h) => h !== undefined) as Hero[];
 
         if (heroes.length === 0) return;
 
+        // Sync preBattleTeam with formation heroes and save initial team
+        set({
+          preBattleTeam: selectedHeroIds,
+          initialBattleTeam: selectedHeroIds // Save the initial team to prevent mid-battle additions
+        });
+
         // Heal heroes to full before battle (remove this if you want persistent damage between battles)
-        heroes.forEach(hero => {
+        heroes.forEach((hero, index) => {
           if (hero.currentStats.hp <= 0 || hero.currentStats.hp < hero.currentStats.maxHp) {
             console.log(`[startBattle] Healing ${hero.name} from ${hero.currentStats.hp} to ${hero.currentStats.maxHp} HP`);
             hero.currentStats.hp = hero.currentStats.maxHp;
+          }
+
+          // Set hero position from formation or use default
+          const formation = state.heroFormation[hero.instanceId];
+          if (formation) {
+            // Use the formation position
+            (hero as any).formationPosition = formation;
+            console.log(`[startBattle] Hero ${hero.name} will use formation position (${formation.row}, ${formation.col})`);
+          } else {
+            // Default position if not in formation
+            const row = Math.min(2 + Math.floor(index / 2), 5);
+            const col = index % 2;
+            (hero as any).formationPosition = { row, col };
+            console.log(`[startBattle] Hero ${hero.name} will use default position (${row}, ${col})`);
           }
         });
 
@@ -1446,12 +1781,21 @@ export const useGameStore = create<GameStore>()(
               createEnemyInstance(enemyType, state.selectedStageId)
             );
 
+        // Add formation positions to heroes
+        const heroesWithPositions = heroes.map(hero => {
+          const formationPos = (hero as any).formationPosition;
+          return {
+            ...hero,
+            position: formationPos || { row: 0, col: 0 } // Add position property
+          };
+        });
+
         // Run battle simulation to get all events
         // Use deterministic V2 simulator if enabled, otherwise use original
         let battleState: BattleState;
         if (state.useDeterministicBattle) {
           console.log('[startBattle] Using Deterministic Battle Simulator V2');
-          const simulator = new DeterministicBattleSimulatorV2(heroes, enemies);
+          const simulator = new DeterministicBattleSimulatorV2(heroesWithPositions as any, enemies);
           battleState = simulator.simulate();
 
           // CRITICAL: Force cleanup any invalid positions that somehow got through
@@ -1513,13 +1857,24 @@ export const useGameStore = create<GameStore>()(
         console.log('Current wave:', battleState.currentWave);
         console.log('Total waves:', battleState.totalWaves);
 
-        // IMPORTANT: Reset positions to match what the V2 simulator used
-        // The V2 simulator generates events based on these initial positions
+        // IMPORTANT: Use formation positions if available
         battleState.heroes.forEach((hero, index) => {
-          // Heroes start at rows 2-7, columns 0-1
-          const row = Math.min(2 + Math.floor(index / 2), 7);
-          const col = index % 2;
-          hero.position = { row, col };
+          // Check if we have a formation position for this hero
+          const originalHero = heroes.find(h => h.instanceId === hero.instanceId);
+          const formationPos = originalHero ? (originalHero as any).formationPosition : null;
+
+          if (formationPos) {
+            // Use the formation position
+            hero.position = { row: formationPos.row, col: formationPos.col };
+            console.log(`[Battle] Positioned ${hero.name} at formation position (${formationPos.row}, ${formationPos.col})`);
+          } else {
+            // Default positioning
+            const row = Math.min(2 + Math.floor(index / 2), 7);
+            const col = index % 2;
+            hero.position = { row, col };
+            console.log(`[Battle] Positioned ${hero.name} at default position (${row}, ${col})`);
+          }
+
           hero.isAlive = true;
           hero.stats.hp = hero.stats.maxHp;
           hero.cooldown = 0; // Reset cooldown to 0
@@ -1596,31 +1951,75 @@ export const useGameStore = create<GameStore>()(
               });
             }
           } else if (event.type === 'waveTransition') {
-            // Update hero positions using the specific transitions from the event
-            if (event.data.heroTransitions) {
-              // Use the pre-calculated positions that avoid collisions
-              event.data.heroTransitions.forEach((transition: any) => {
-                const hero = state.currentBattle.heroes.find(h => h.id === transition.unitId);
-                if (hero) {
-                  console.log(`[WaveTransition] Updated ${hero.name} position from (${transition.from.row},${transition.from.col}) to (${transition.to.row},${transition.to.col})`);
-                  hero.position = transition.to;
-                }
-              });
-            } else {
-              // Fallback for older events without transition data
-              const scrollDistance = event.data.scrollDistance || 2;
+            // Check if we have a custom formation to apply (user modified)
+            const formation = state.heroFormation;
+            const heroKeys = Object.keys(formation).filter(key => key !== '_waveKey');
+            const hasCustomFormation = heroKeys.length > 0 && state.isFormationUserModified;
+
+            console.log('[WaveTransition] Formation check:', {
+              formation,
+              heroKeys,
+              heroKeysLength: heroKeys.length,
+              isFormationUserModified: state.isFormationUserModified,
+              hasCustomFormation
+            });
+
+            if (hasCustomFormation) {
+              // Apply custom formation - user has manually positioned heroes
+              console.log('[WaveTransition] User has custom formation, applying exact positions...');
+
               state.currentBattle.heroes.forEach(hero => {
                 if (hero.isAlive) {
-                  const oldCol = hero.position.col;
-                  hero.position.col = Math.max(0, hero.position.col - scrollDistance - 1);
-                  console.log(`[WaveTransition] Updated ${hero.name} position from col ${oldCol} to ${hero.position.col}`);
+                  const desiredPos = formation[hero.instanceId];
+                  if (desiredPos) {
+                    // Use the exact position the user specified
+                    const oldPos = { ...hero.position };
+                    hero.position = { row: desiredPos.row, col: desiredPos.col };
+                    console.log(`[WaveTransition] ${hero.name}: custom position (${desiredPos.row},${desiredPos.col}) [was at (${oldPos.row},${oldPos.col})]`);
+                  }
                 }
               });
+
+              // Mark that custom formation was applied (for animation system)
+              event.data.customFormationApplied = true;
+
+              // Keep formation data for this wave - user might want to modify it again
+              // Formation will be cleared when we advance to next wave
+              console.log('[WaveTransition] Applied custom formation, keeping formation data for potential re-use');
+
+              // TODO: Implement proper battle re-simulation with custom formation
+              // For now, just apply the custom positions - movement will be fixed in next iteration
+
+              // Debug: Log actual hero positions after formation applied
+              console.log('[WaveTransition] === Hero positions after custom formation applied ===');
+              state.currentBattle.heroes.forEach(hero => {
+                console.log(`[WaveTransition] ${hero.name}: actual position (${hero.position.row},${hero.position.col})`);
+              });
+              console.log('[WaveTransition] === End hero positions ===');
+            } else {
+              // No custom formation - let the simulator's transitions apply normally
+              console.log('[WaveTransition] No custom formation, using simulator transitions...');
+              if (event.data.heroTransitions) {
+                event.data.heroTransitions.forEach((transition: any) => {
+                  const hero = state.currentBattle.heroes.find(h => h.id === transition.unitId);
+                  if (hero) {
+                    console.log(`[WaveTransition] Auto-scroll ${hero.name}: (${transition.from.row},${transition.from.col}) → (${transition.to.row},${transition.to.col})`);
+                    hero.position = transition.to;
+                  }
+                });
+              }
+
+              // Clear formation data since no custom formation was applied
+              // This allows fresh initialization for next formation UI
+              set({ heroFormation: {}, isFormationUserModified: false });
+              console.log('[WaveTransition] Applied simulator transitions and cleared formation');
             }
           } else if (event.type === 'waveStart') {
-            // Update current wave number when new wave spawns
+            // Update current wave number when new wave spawns - trust the simulator as source of truth
+            console.log(`[WaveStart] Wave start event - simulator wave: ${event.data.waveNumber}, old battle state wave: ${state.currentBattle.currentWave}`);
+
             state.currentBattle.currentWave = event.data.waveNumber;
-            console.log(`[WaveStart] Wave ${event.data.waveNumber} of ${event.data.totalWaves} is starting`);
+            console.log(`[WaveStart] Updated battle state to wave ${event.data.waveNumber}`);
             console.log('[WaveStart] Enemy data:', event.data.enemies);
 
             // Update enemy positions from wave start event (slide-in animation)
@@ -1690,7 +2089,35 @@ export const useGameStore = create<GameStore>()(
           );
           set({ gridOccupants: newOccupants });
         } else {
-          // Battle finished - handle victory/defeat
+          // No more events in current simulation - update index to reflect completion
+          set({ battleEventIndex: nextIndex });
+
+          // Check if there are more waves
+          const hasMoreWaves = state.currentBattle.currentWave < state.currentBattle.totalWaves;
+
+          if (hasMoreWaves && !state.currentBattle.winner) {
+            // More waves remaining but no events - this means wave completed and we need formation management
+            console.log(`[advanceBattleEvent] Wave ${state.currentBattle.currentWave} events complete, ${state.currentBattle.totalWaves - state.currentBattle.currentWave} waves remaining`);
+
+            // Update battle layout to show pause state
+            const newOccupants = createBattleLayout(
+              state.currentBattle,
+              nextIndex, // Use nextIndex to show we're past all events
+              state.advanceBattleEvent,
+              state.battleSpeed,
+              () => {
+                const newSpeed = state.battleSpeed === 1 ? 4 : state.battleSpeed === 4 ? 8 : 1;
+                state.setBattleSpeed(newSpeed);
+              }
+            );
+            set({ gridOccupants: newOccupants });
+
+            // The auto-advance will detect wave completion and pause for formation management
+            // Don't declare battle finished yet
+            return;
+          }
+
+          // Battle truly finished - handle victory/defeat
           console.log('Battle finished! Winner:', state.currentBattle.winner);
 
           if (state.currentBattle.winner === 'heroes' && state.selectedStageId) {
@@ -1876,6 +2303,7 @@ export const useGameStore = create<GameStore>()(
               // Clear battle state
               set({
                 currentBattle: null,
+                initialBattleTeam: [], // Clear initial team after victory
                 battleEventIndex: 0,
                 battleSpeed: 1,
               });
@@ -1937,6 +2365,9 @@ export const useGameStore = create<GameStore>()(
         if (!stage) return;
 
         console.log('Retreating from battle...');
+
+        // Clear initial battle team
+        set({ initialBattleTeam: [] });
 
         // Calculate partial rewards based on wave reached
         const maxWaveReached = state.currentBattle.currentWave;

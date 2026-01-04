@@ -111,10 +111,26 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
     e.dataTransfer.dropEffect = 'move';
   };
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!button.onDrop) return;
+    e.preventDefault();
+    console.log('[GridButtonCard] Drag enter on button:', button.id);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    console.log('[GridButtonCard] Drag leave on button:', button.id);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const droppedHeroId = e.dataTransfer.getData('heroId');
+    console.log('[GridButtonCard] Drop on button:', {
+      buttonId: button.id,
+      droppedHeroId,
+      hasOnDrop: !!button.onDrop
+    });
     if (droppedHeroId && button.onDrop) {
+      console.log('[GridButtonCard] Calling onDrop with heroId:', droppedHeroId);
       button.onDrop(droppedHeroId);
     }
   };
@@ -133,6 +149,8 @@ export function GridButtonCard({ button, cellSize }: GridButtonCardProps) {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       disabled={button.disabled}
       className={`relative w-full h-full bg-gradient-to-br ${baseStyles} border-2 rounded-lg overflow-hidden shadow-lg ${button.draggable ? 'cursor-move' : 'cursor-pointer'} disabled:cursor-not-allowed`}

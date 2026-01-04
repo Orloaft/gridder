@@ -46,12 +46,26 @@ export function GridHeroCard({ hero, cellSize }: GridHeroCardProps) {
 
   // Drag-and-drop handlers
   const handleDragStart = (e: React.DragEvent) => {
-    if (!hero.draggable) return;
+    console.log('[GridHeroCard] handleDragStart called:', {
+      heroName: hero.name,
+      isDraggable: hero.draggable,
+      heroInstanceId: hero.heroInstanceId
+    });
+
+    if (!hero.draggable) {
+      console.log('[GridHeroCard] Hero is not draggable, returning');
+      return;
+    }
+
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('heroId', hero.heroInstanceId || '');
+    console.log('[GridHeroCard] Set drag data - heroId:', hero.heroInstanceId);
+
     if (hero.onDragStart) {
+      console.log('[GridHeroCard] Calling hero.onDragStart');
       hero.onDragStart();
     }
+
     // Add dragging visual feedback
     if (cardRef.current) {
       cardRef.current.style.opacity = '0.5';

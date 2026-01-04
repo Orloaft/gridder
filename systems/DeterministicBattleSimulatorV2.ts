@@ -61,92 +61,67 @@ export class DeterministicBattleSimulatorV2 {
   }
 
   /**
-   * Simulate the entire battle and return a BattleState with all events
-   * This is the main entry point that matches the original BattleSimulator interface
+   * Simulate a single wave starting from the given wave number
    */
-  public simulate(): BattleState {
-    console.error('[DeterministicBattleSimulatorV2] Starting simulation');
-    console.warn('[DeterministicBattleSimulatorV2] Starting simulation');
+  public simulateWave(targetWave: number, existingEvents: BattleEvent[] = []): BattleState {
+    console.log(`[DeterministicBattleSimulatorV2] Simulating single wave ${targetWave}`);
 
-    // Clear previous state
-    this.events = [];
-    this.currentTick = 0;
+    // Start with existing events (from previous waves)
+    this.events = [...existingEvents];
+    this.currentTick = existingEvents.length > 0 ? Math.max(...existingEvents.map(e => e.tick)) : 0;
 
-    // Add battle start event
-    this.events.push({
-      type: BattleEventType.BattleStart,
-      tick: this.currentTick,
-      data: {}
-    });
-
-    // Process all waves
     const allEnemyWaves = this.getEnemyWaves();
-    let currentWave = 1;
     const totalWaves = allEnemyWaves.length;
 
-    for (let waveIndex = 0; waveIndex < allEnemyWaves.length; waveIndex++) {
-      currentWave = waveIndex + 1;
-
-      // Spawn wave enemies
-      this.spawnWave(currentWave, totalWaves);
-
-      // Run combat until wave is defeated or heroes lose
-      const waveResult = this.simulateWaveCombat();
-
-      if (waveResult === 'defeat') {
-        this.events.push({
-          type: BattleEventType.Defeat,
-          tick: this.currentTick,
-          data: {}
-        });
-        break;
-      }
-
-      // Wave complete
-      if (currentWave < totalWaves) {
-        // Not the last wave - add wave complete event for decision point
-        const remainingEnemies = this.getAliveEnemies();
-        this.events.push({
-          type: BattleEventType.WaveComplete,
-          tick: this.currentTick,
-          data: {
-            waveNumber: currentWave,
-            enemiesDefeated: remainingEnemies.length,
-            nextWaveNumber: currentWave + 1,
-            totalWaves: totalWaves
-          }
-        });
-
-        // Add wave transition if not last wave
-        if (currentWave < totalWaves - 1) {
-          this.addWaveTransition(currentWave + 1);
-        }
-      }
+    if (targetWave > totalWaves) {
+      console.error(`[DeterministicBattleSimulatorV2] Invalid wave ${targetWave}, max is ${totalWaves}`);
+      return this.buildBattleState(targetWave, totalWaves);
     }
 
-    // Check final victory
-    const aliveHeroes = this.getAliveHeroes();
-    const aliveEnemies = this.getAliveEnemies();
+    // Spawn and simulate only the target wave
+    this.spawnWave(targetWave, totalWaves);
+    const waveResult = this.simulateWaveCombat();
 
-    let winner: 'heroes' | 'enemies' | null = null;
-    if (aliveHeroes.length > 0 && aliveEnemies.length === 0) {
-      winner = 'heroes';
+    if (waveResult === 'defeat') {
       this.events.push({
-        type: BattleEventType.Victory,
+        type: BattleEventType.Defeat,
         tick: this.currentTick,
         data: {}
       });
-    } else if (aliveHeroes.length === 0) {
-      winner = 'enemies';
-      if (this.events[this.events.length - 1]?.type !== BattleEventType.Defeat) {
+    } else {
+      // Wave complete
+      const remainingEnemies = this.getAliveEnemies();
+      this.events.push({
+        type: BattleEventType.WaveComplete,
+        tick: this.currentTick,
+        data: {
+          waveNumber: targetWave,
+          enemiesDefeated: remainingEnemies.length,
+          nextWaveNumber: targetWave + 1,
+          totalWaves: totalWaves
+        }
+      });
+
+      // Add wave transition if not the last wave
+      if (targetWave < totalWaves) {
+        this.addWaveTransition(targetWave + 1);
+      } else {
+        // Final victory
         this.events.push({
-          type: BattleEventType.Defeat,
+          type: BattleEventType.Victory,
           tick: this.currentTick,
           data: {}
         });
       }
     }
 
+    return this.buildBattleState(targetWave, totalWaves);
+  }
+
+  /**
+   * Build the final battle state object
+   */
+  private buildBattleState(currentWave: number, totalWaves: number): BattleState {
     // Build final battle state
     const heroes = this.getHeroes()
       .map(unit => this.unitToBattleUnit(unit))
@@ -156,32 +131,15 @@ export class DeterministicBattleSimulatorV2 {
       .map(unit => this.unitToBattleUnit(unit))
       .filter(unit => unit !== null) as BattleUnit[];
 
-    // Log initial positions for debugging animation offset issue
-    console.log('[V2 Simulator] Final hero positions:', heroes.map(h => ({
-      name: h.name,
-      pos: h.position
-    })));
-    console.log('[V2 Simulator] Final enemy positions:', enemies.map(e => ({
-      name: e.name,
-      pos: e.position
-    })));
+    // Determine winner
+    const aliveHeroes = this.getAliveHeroes();
+    const aliveEnemies = this.getAliveEnemies();
 
-    // Debug: Check for any invalid positions
-    const invalidEnemies = enemies.filter(e => e.position.col >= 8 || e.position.row >= 8);
-    const invalidHeroes = heroes.filter(h => h.position.col >= 8 || h.position.row >= 8);
-
-    if (invalidEnemies.length > 0) {
-      console.error('[DeterministicBattleSimulatorV2] Found enemies with invalid positions:');
-      invalidEnemies.forEach(e => {
-        console.error(`  - ${e.name}: position (${e.position.row}, ${e.position.col})`);
-      });
-    }
-
-    if (invalidHeroes.length > 0) {
-      console.error('[DeterministicBattleSimulatorV2] Found heroes with invalid positions:');
-      invalidHeroes.forEach(h => {
-        console.error(`  - ${h.name}: position (${h.position.row}, ${h.position.col})`);
-      });
+    let winner: 'heroes' | 'enemies' | null = null;
+    if (aliveHeroes.length > 0 && aliveEnemies.length === 0) {
+      winner = 'heroes';
+    } else if (aliveHeroes.length === 0) {
+      winner = 'enemies';
     }
 
     return {
@@ -197,12 +155,38 @@ export class DeterministicBattleSimulatorV2 {
   }
 
   /**
+   * Simulate the entire battle and return a BattleState with all events
+   * This is the main entry point that matches the original BattleSimulator interface
+   */
+  public simulate(): BattleState {
+    console.error('[DeterministicBattleSimulatorV2] Starting simulation - wave 1 only');
+    console.warn('[DeterministicBattleSimulatorV2] Starting simulation - wave 1 only');
+
+    // Clear previous state
+    this.events = [];
+    this.currentTick = 0;
+
+    // Add battle start event
+    this.events.push({
+      type: BattleEventType.BattleStart,
+      tick: this.currentTick,
+      data: {}
+    });
+
+    // Simulate only wave 1 - subsequent waves will be simulated on-demand
+    return this.simulateWave(1, this.events);
+  }
+
+  /**
    * Initialize units from heroes and enemies
    */
   private initializeUnits(heroes: Hero[], enemies: Enemy[] | Enemy[][]) {
     // Initialize heroes
     heroes.forEach((hero, index) => {
-      const position = this.getHeroStartPosition(index);
+      // Check if hero already has a position (from formation), otherwise use default
+      const position = (hero as any).position || this.getHeroStartPosition(index);
+
+      console.log(`[V2 InitializeUnit] Hero ${hero.name}: Using position (${position.row}, ${position.col})`);
 
       // Validate position
       if (position.row < 0 || position.row >= 8 || position.col < 0 || position.col >= 8) {
@@ -761,7 +745,7 @@ export class DeterministicBattleSimulatorV2 {
         to: newPos
       });
 
-      console.log(`[WaveTransition] Hero ${hero.name} moving from (${oldPos.row},${oldPos.col}) to (${newPos.row},${newPos.col})`);
+      console.log(`[WaveTransition] Hero ${hero.name} (${hero.id}) moving from (${oldPos.row},${oldPos.col}) to (${newPos.row},${newPos.col})`);
     });
 
     // Add transition event with hero position data

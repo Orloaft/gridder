@@ -119,14 +119,15 @@ export function useBattleAutoAdvance(baseDelay: number = 200) {
     const isWaveComplete = currentEvent?.type === BattleEventType.WaveComplete;
 
     if (isWaveComplete) {
-      console.log('[useBattleAutoAdvance] Wave complete detected - pausing auto-advance');
-      return; // Don't auto-advance during wave complete - wait for player decision
+      console.log('[useBattleAutoAdvance] Wave complete detected - continuing to apply wave transition...');
+      // Continue through wave complete to wave transition automatically
     }
 
-    // Check if we just passed a WaveComplete event and should resume
+    // Check if we just completed a wave transition - this is where we pause for formation management
     const prevEvent = battleEventIndex > 0 ? currentBattle.events[battleEventIndex - 1] : null;
-    if (prevEvent?.type === BattleEventType.WaveComplete) {
-      console.log('[useBattleAutoAdvance] Just passed WaveComplete, resuming auto-advance');
+    if (prevEvent?.type === BattleEventType.WaveTransition) {
+      console.log('[useBattleAutoAdvance] Wave transition just completed - pausing for formation management');
+      return; // Pause after wave transition so user can manage formation with actual post-scroll positions
     }
 
     // Initialize animation flags if undefined
@@ -143,6 +144,23 @@ export function useBattleAutoAdvance(baseDelay: number = 200) {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       console.log('[useBattleAutoAdvance] Cleared existing timer');
+    }
+
+    // Check if we're at the end of current wave events but have more waves
+    const isAtEndOfWaveEvents = battleEventIndex >= currentBattle.events.length;
+    const hasMoreWaves = currentBattle.currentWave < currentBattle.totalWaves;
+    const shouldPauseForFormation = isAtEndOfWaveEvents && hasMoreWaves && !currentBattle.winner;
+
+    if (shouldPauseForFormation) {
+      console.log('[useBattleAutoAdvance] ✅ PAUSE DETECTED: At end of wave events with more waves remaining - pausing for formation management');
+      console.log('[useBattleAutoAdvance] Pause state:', {
+        battleEventIndex,
+        eventsLength: currentBattle.events.length,
+        currentWave: currentBattle.currentWave,
+        totalWaves: currentBattle.totalWaves,
+        winner: currentBattle.winner
+      });
+      return; // Pause so user can manage formation before next wave simulation
     }
 
     // Check if battle is finished (we need to process all events including the last one)

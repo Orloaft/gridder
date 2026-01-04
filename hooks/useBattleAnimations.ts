@@ -50,6 +50,10 @@ export function useBattleAnimations() {
         console.log('[WaveTransition] Starting transition for wave', event.data.waveNumber);
 
         const { scrollDistance, duration, heroTransitions } = event.data;
+
+        // Check if custom formation was applied (heroes already positioned correctly)
+        const customFormationApplied = event.data.customFormationApplied;
+        console.log('[WaveTransition] Animation check - customFormationApplied:', customFormationApplied);
         const cellSize = responsiveDimensions.mainGridCellSize;
 
         // Convert scroll distance from grid cells to pixels
@@ -64,8 +68,9 @@ export function useBattleAnimations() {
           }
         }));
 
-        // If we have specific hero transitions, use them
-        if (heroTransitions) {
+        // If we have specific hero transitions, use them (unless custom formation was applied)
+        if (heroTransitions && !customFormationApplied) {
+          console.log('[WaveTransition] Using simulator transitions for hero movement');
           heroTransitions.forEach((transition: any) => {
             const unitCard = document.querySelector(`[data-unit-id="${transition.unitId}"]`);
             if (unitCard) {
@@ -99,6 +104,8 @@ export function useBattleAnimations() {
               }
             }
           });
+        } else if (customFormationApplied) {
+          console.log('[WaveTransition] Skipping simulator transitions - custom formation already applied heroes to final positions');
         } else {
           // Fallback: calculate positions for older events
           const allUnits = [...currentBattle.heroes, ...currentBattle.enemies].filter(u => u.isAlive);
