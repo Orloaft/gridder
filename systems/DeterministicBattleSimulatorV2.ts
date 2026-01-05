@@ -136,10 +136,11 @@ export class DeterministicBattleSimulatorV2 {
     const aliveEnemies = this.getAliveEnemies();
 
     let winner: 'heroes' | 'enemies' | null = null;
-    if (aliveHeroes.length > 0 && aliveEnemies.length === 0) {
-      winner = 'heroes';
-    } else if (aliveHeroes.length === 0) {
+    if (aliveHeroes.length === 0) {
       winner = 'enemies';
+    } else if (aliveEnemies.length === 0 && currentWave === totalWaves) {
+      // Only a true victory if it's the last wave
+      winner = 'heroes';
     }
 
     return {
