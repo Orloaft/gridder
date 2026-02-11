@@ -1,5 +1,6 @@
 import { ITEM_TEMPLATES } from '@/data/items';
 import { Rarity } from '@/types/core.types';
+import { getRarityHexColor } from '@/utils/constants';
 
 /**
  * Loot drop configuration for a stage
@@ -174,18 +175,5 @@ export function getRarityName(rarity: Rarity): string {
  * Get rarity color for UI display
  */
 export function getRarityColor(rarity: Rarity): string {
-  switch (rarity) {
-    case Rarity.Common:
-      return '#9CA3AF'; // Gray
-    case Rarity.Uncommon:
-      return '#10B981'; // Green
-    case Rarity.Rare:
-      return '#3B82F6'; // Blue
-    case Rarity.Legendary:
-      return '#F59E0B'; // Gold
-    case Rarity.Mythic:
-      return '#EC4899'; // Bright Pink/Magenta (cosmic/mythical)
-    default:
-      return '#6B7280';
-  }
+  return getRarityHexColor(rarity);
 }

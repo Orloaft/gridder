@@ -52,7 +52,6 @@ export function useDoomsdaySystem() {
 
     // Display warnings
     result.warnings.forEach(warning => {
-      console.warn('[Doomsday]', warning);
       // Could trigger UI notifications here
     });
 
@@ -74,7 +73,6 @@ export function useDoomsdaySystem() {
     const timeCost = doomsdaySystem.getTimeCost('retreat');
     const result = doomsdaySystem.advanceTime(timeCost, 'Retreated from battle');
 
-    console.log('[Doomsday] Retreat time cost:', timeCost, 'days');
     return result;
   }, []);
 
@@ -83,7 +81,6 @@ export function useDoomsdaySystem() {
     const timeCost = doomsdaySystem.getTimeCost('shopVisit');
     const result = doomsdaySystem.advanceTime(timeCost, 'Visited shop');
 
-    console.log('[Doomsday] Shop visit time cost:', timeCost, 'days');
     return result;
   }, []);
 
@@ -95,14 +92,11 @@ export function useDoomsdaySystem() {
     // Note: Hero healing would be handled by the game store
     // This is just tracking the time cost
 
-    console.log('[Doomsday] Rest time cost:', timeCost, 'days. All heroes healed.');
     return result;
   }, []);
 
   // Handle doomsday events
   const handleDoomsdayEvent = useCallback((event: DoomsdayEvent) => {
-    console.log('[Doomsday Event]', event.title, '-', event.description);
-
     // Dispatch custom event for UI to handle
     window.dispatchEvent(new CustomEvent('doomsdayEvent', {
       detail: event
@@ -112,17 +106,14 @@ export function useDoomsdaySystem() {
     switch (event.id) {
       case 'first_seal_broken':
         // Apply first seal effects
-        console.log('First seal broken! Enemies are stronger now.');
         break;
 
       case 'legion_invasion':
         // Spawn rate increase
-        console.log('Shadow Legion has arrived! More enemies will appear.');
         break;
 
       case 'blood_moon':
         // Apply blood moon effects
-        console.log('Blood Moon rises! Enemies gain lifesteal.');
         break;
 
       case 'apocalypse':
@@ -199,13 +190,10 @@ export function useDoomsdaySystem() {
       });
     });
 
-    console.log('[Doomsday] Applied global buffs to battle:', globalBuffs);
   }, [currentBattle]);
 
   // Handle game over
   const handleGameOver = useCallback(() => {
-    console.error('[GAME OVER] The Void Ritual is complete. The world is lost...');
-
     // Navigate to game over screen
     navigate(ScreenType.MainMenu);
 

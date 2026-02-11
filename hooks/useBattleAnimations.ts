@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
-import { BattleEventType } from '@/systems/BattleSimulator';
+import { BattleEventType } from '@/types/battle.types';
 import { animateTileSlide, animateAttack, animateDamage, animateDeath } from '@/animations/tileAnimations';
 import { animateCleave, animateFireball, animateArrow, animateBuff, animateSimpleBuff, animateBloodStrike, createTileFlash } from '@/animations/skillAnimations';
 import { useResponsiveGrid } from '@/hooks/useResponsiveGrid';
@@ -19,7 +19,7 @@ declare global {
  * Hook to handle battle animations based on events
  */
 export function useBattleAnimations() {
-  const { currentScreen, currentBattle, battleEventIndex, useDeterministicBattle } = useGameStore();
+  const { currentScreen, currentBattle, battleEventIndex } = useGameStore();
   const previousEventIndex = useRef(-1);
   const responsiveDimensions = useResponsiveGrid();
 
@@ -47,13 +47,10 @@ export function useBattleAnimations() {
     switch (event.type) {
       case BattleEventType.WaveTransition: {
         // Wave transition - EVERYTHING scrolls left together
-        console.log('[WaveTransition] Starting transition for wave', event.data.waveNumber);
-
         const { scrollDistance, duration, heroTransitions } = event.data;
 
         // Check if custom formation was applied (heroes already positioned correctly)
         const customFormationApplied = event.data.customFormationApplied;
-        console.log('[WaveTransition] Animation check - customFormationApplied:', customFormationApplied);
         const cellSize = responsiveDimensions.mainGridCellSize;
 
         // Convert scroll distance from grid cells to pixels
@@ -70,7 +67,6 @@ export function useBattleAnimations() {
 
         // If we have specific hero transitions, use them (unless custom formation was applied)
         if (heroTransitions && !customFormationApplied) {
-          console.log('[WaveTransition] Using simulator transitions for hero movement');
           heroTransitions.forEach((transition: any) => {
             const unitCard = document.querySelector(`[data-unit-id="${transition.unitId}"]`);
             if (unitCard) {
@@ -79,8 +75,6 @@ export function useBattleAnimations() {
                 const fromLeft = transition.from.col * cellSize;
                 const toLeft = transition.to.col * cellSize;
                 const currentTop = transition.from.row * cellSize;
-
-                console.log(`[WaveTransition] Hero ${transition.unitId} animating from (${transition.from.row},${transition.from.col}) to (${transition.to.row},${transition.to.col})`);
 
                 // Only animate if there's actual movement
                 if (fromLeft !== toLeft) {
@@ -97,7 +91,6 @@ export function useBattleAnimations() {
                     duration: duration / 1000,
                     ease: 'ease-in-out',
                     onComplete: () => {
-                      console.log(`[WaveTransition] Animation complete for hero`);
                     }
                   });
                 }
@@ -105,7 +98,6 @@ export function useBattleAnimations() {
             }
           });
         } else if (customFormationApplied) {
-          console.log('[WaveTransition] Skipping simulator transitions - custom formation already applied heroes to final positions');
         } else {
           // Fallback: calculate positions for older events
           const allUnits = [...currentBattle.heroes, ...currentBattle.enemies].filter(u => u.isAlive);
@@ -155,8 +147,6 @@ export function useBattleAnimations() {
 
       case BattleEventType.WaveStart: {
         // Animate new wave of enemies sliding in from the right
-        console.log('[WaveStart] Wave', event.data.waveNumber, 'of', event.data.totalWaves);
-
         event.data.enemies.forEach((enemyData: any, index: number) => {
           const unitCard = document.querySelector(`[data-unit-id="${enemyData.unitId}"]`);
           if (unitCard) {
@@ -182,7 +172,6 @@ export function useBattleAnimations() {
 
       case BattleEventType.Move: {
         // Animate unit movement
-        console.log('[Move] Processing move event for', event.data.unitId, 'from', event.data.from, 'to', event.data.to);
         const unitCard = document.querySelector(`[data-unit-id="${event.data.unitId}"]`);
         if (unitCard) {
           const unitWrapper = unitCard.parentElement;
@@ -200,20 +189,6 @@ export function useBattleAnimations() {
             // We need to move it back to "from" using transforms
             const offsetX = fromX - toX;
             const offsetY = fromY - toY;
-
-            // Always log the first few moves to debug position issues
-            const moveCount = document.querySelectorAll('[data-move-logged]').length;
-            if (moveCount < 5) {
-              unitWrapper.setAttribute('data-move-logged', 'true');
-              console.log(`[Move Debug] Unit ${event.data.unitId}:`, {
-                from: event.data.from,
-                to: event.data.to,
-                cellSize,
-                fromPos: { x: fromX, y: fromY },
-                toPos: { x: toX, y: toY },
-                offset: { x: offsetX, y: offsetY }
-              });
-            }
 
             // First, clear any existing transforms to start fresh
             gsap.set(unitWrapper, { clearProps: "transform" });
@@ -240,11 +215,7 @@ export function useBattleAnimations() {
                 0.3
               );
             }, 10); // Small delay to ensure transform is set
-          } else {
-            console.warn('[Move] Unit wrapper not found or not HTMLElement');
           }
-        } else {
-          console.warn('[Move] Unit card not found for', event.data.unitId);
         }
         break;
       }
@@ -282,21 +253,18 @@ export function useBattleAnimations() {
         // Animate ability usage
         const casterCard = document.querySelector(`[data-unit-id="${event.data.attackerId}"]`);
         if (!casterCard || !(casterCard instanceof HTMLElement)) {
-          console.log('[AbilityUsed] Caster card not found:', event.data.attackerId);
           break;
         }
 
         // Get the parent wrapper element (has position styles)
         const casterWrapper = casterCard.parentElement;
         if (!casterWrapper || !(casterWrapper instanceof HTMLElement)) {
-          console.log('[AbilityUsed] Caster wrapper not found');
           break;
         }
 
         // Get the grid container for creating effect elements (parent of wrapper)
         const gridContainer = casterWrapper.parentElement;
         if (!gridContainer || !(gridContainer instanceof HTMLElement)) {
-          console.log('[AbilityUsed] Grid container not found');
           break;
         }
 
@@ -307,7 +275,6 @@ export function useBattleAnimations() {
           u => u.id === event.data.attackerId
         );
         if (!caster || !caster.isAlive) {
-          console.log('[AbilityUsed] Caster not found or dead:', event.data.attackerId);
           break;
         }
 
@@ -319,14 +286,6 @@ export function useBattleAnimations() {
           const enemyPositions = currentBattle.enemies
             .filter(e => e.isAlive)
             .map(e => e.position);
-
-          console.log('[Blade Cleave Animation]', {
-            casterWrapper,
-            enemyPositions,
-            casterPosition: caster.position,
-            cellSize,
-            gridContainer
-          });
 
           // Create tile flash highlights for enemy positions
           enemyPositions.forEach((pos, index) => {

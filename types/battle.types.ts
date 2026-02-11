@@ -1,161 +1,96 @@
-import { Hero, Enemy, StatusEffect } from './core.types';
+import { Enemy, UnitStats, StatusEffect, Ability } from './core.types';
 import { GridPosition } from './grid.types';
 
 // Battle event types
 export enum BattleEventType {
   BattleStart = 'battleStart',
-  TurnStart = 'turnStart',
+  WaveComplete = 'waveComplete', // Wave completed - pause for player decision
+  WaveTransition = 'waveTransition', // Smooth transition animation between waves
+  WaveStart = 'waveStart', // New wave of enemies entering
+  Tick = 'tick', // Replaces TurnStart - fires each tick with cooldown updates
   Move = 'move',
   Attack = 'attack',
-  AbilityUse = 'abilityUse',
   Damage = 'damage',
   Heal = 'heal',
-  StatusApplied = 'statusApplied',
-  StatusExpired = 'statusExpired',
   Death = 'death',
   Victory = 'victory',
   Defeat = 'defeat',
+  StatusApplied = 'statusApplied',
+  StatusExpired = 'statusExpired',
+  CriticalHit = 'criticalHit',
+  Evaded = 'evaded',
+  AbilityUsed = 'abilityUsed', // When a unit uses an ability
 }
 
-// Base battle event
-export interface BaseBattleEvent {
-  timestamp: number;
-  type: BattleEventType;
-}
-
-// Battle start event
-export interface BattleStartEvent extends BaseBattleEvent {
-  type: BattleEventType.BattleStart;
-  heroes: Hero[];
-  enemies: Enemy[];
-}
-
-// Turn start event
-export interface TurnStartEvent extends BaseBattleEvent {
-  type: BattleEventType.TurnStart;
-  turnNumber: number;
-  activeUnitId: string;
-}
-
-// Move event
-export interface MoveEvent extends BaseBattleEvent {
-  type: BattleEventType.Move;
+// Typed event data for the most common event types
+export interface MoveEventData {
   unitId: string;
-  fromPosition: GridPosition;
-  toPosition: GridPosition;
+  from: GridPosition;
+  to: GridPosition;
 }
 
-// Attack event
-export interface AttackEvent extends BaseBattleEvent {
-  type: BattleEventType.Attack;
+export interface AttackEventData {
   attackerId: string;
   targetId: string;
   damage: number;
-  isCritical: boolean;
-  isMiss: boolean;
+  isCrit?: boolean;
 }
 
-// Ability use event
-export interface AbilityUseEvent extends BaseBattleEvent {
-  type: BattleEventType.AbilityUse;
-  userId: string;
-  abilityId: string;
-  targetIds: string[];
-}
-
-// Damage event
-export interface DamageEvent extends BaseBattleEvent {
-  type: BattleEventType.Damage;
+export interface DamageEventData {
   targetId: string;
   damage: number;
-  sourceId: string;
-  damageType: 'physical' | 'magical' | 'true';
+  remainingHp: number;
+  sourceId?: string;
 }
 
-// Heal event
-export interface HealEvent extends BaseBattleEvent {
-  type: BattleEventType.Heal;
+export interface DeathEventData {
+  unitId: string;
+  killedBy?: string;
+}
+
+export interface HealEventData {
   targetId: string;
   amount: number;
-  sourceId: string;
+  healedHp: number;
+  sourceId?: string;
 }
 
-// Status applied event
-export interface StatusAppliedEvent extends BaseBattleEvent {
-  type: BattleEventType.StatusApplied;
-  targetId: string;
-  status: StatusEffect;
-  sourceId: string;
+// BattleEvent uses `data: any` for backward compatibility.
+// Consumers can narrow using the typed data interfaces above:
+//   if (event.type === BattleEventType.Move) { const data = event.data as MoveEventData; }
+export interface BattleEvent {
+  type: BattleEventType;
+  tick: number;
+  data: any;
 }
 
-// Status expired event
-export interface StatusExpiredEvent extends BaseBattleEvent {
-  type: BattleEventType.StatusExpired;
-  targetId: string;
-  statusId: string;
-}
-
-// Death event
-export interface DeathEvent extends BaseBattleEvent {
-  type: BattleEventType.Death;
-  unitId: string;
-  killerId?: string;
-}
-
-// Victory event
-export interface VictoryEvent extends BaseBattleEvent {
-  type: BattleEventType.Victory;
-  winningTeam: 'heroes' | 'enemies';
-}
-
-// Defeat event
-export interface DefeatEvent extends BaseBattleEvent {
-  type: BattleEventType.Defeat;
-  losingTeam: 'heroes' | 'enemies';
-}
-
-// Union type of all battle events
-export type BattleEvent =
-  | BattleStartEvent
-  | TurnStartEvent
-  | MoveEvent
-  | AttackEvent
-  | AbilityUseEvent
-  | DamageEvent
-  | HealEvent
-  | StatusAppliedEvent
-  | StatusExpiredEvent
-  | DeathEvent
-  | VictoryEvent
-  | DefeatEvent;
-
-// Battle recording (sequence of events)
-export interface BattleRecording {
+export interface BattleUnit {
   id: string;
-  stageId: number;
-  heroes: Hero[];
-  enemies: Enemy[];
-  events: BattleEvent[];
-  result: 'victory' | 'defeat';
-  duration: number;
-  rewardsEarned?: BattleRewards;
+  name: string;
+  class?: string;
+  spritePath?: string;
+  baseStats: UnitStats; // Original stats before buffs/debuffs
+  stats: UnitStats; // Current stats (modified by status effects)
+  statusEffects: StatusEffect[]; // Active buffs/debuffs
+  isHero: boolean;
+  isAlive: boolean;
+  position: GridPosition;
+  range: number; // Attack range (1 = melee, 2+ = ranged)
+  cooldown: number; // Current cooldown (0-100, acts at 100)
+  cooldownRate: number; // How much cooldown fills per tick (based on speed)
+  abilities: Ability[]; // Available abilities
+  abilityCooldowns: Map<string, number>; // Track cooldowns for each ability by ID
+  wave?: number; // Which wave this enemy belongs to (1-indexed, undefined for heroes)
+  instanceId?: string; // Hero instance ID for roster matching
 }
 
-// Battle rewards
-export interface BattleRewards {
-  gold: number;
-  experience: number;
-  items?: string[]; // Item IDs
-  heroRecruitChance?: number;
-}
-
-// Battle state (current snapshot during simulation)
 export interface BattleState {
-  turnNumber: number;
-  activeUnits: (Hero | Enemy)[];
-  deadUnits: string[];
-  unitPositions: Map<string, GridPosition>;
-  statusEffects: Map<string, StatusEffect[]>;
-  isComplete: boolean;
-  winner?: 'heroes' | 'enemies';
+  tick: number; // Battle time in ticks (replaces turn-based system)
+  heroes: BattleUnit[];
+  enemies: BattleUnit[];
+  events: BattleEvent[];
+  winner: 'heroes' | 'enemies' | null;
+  currentWave: number; // Current wave number (1-indexed)
+  totalWaves: number; // Total number of waves in battle
+  enemyWaves: Enemy[][]; // Remaining waves of enemies to spawn
 }

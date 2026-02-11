@@ -6,6 +6,7 @@ import { GridHero, GridEnemy } from '@/types/grid.types';
 import { HERO_TEMPLATES } from '@/data/units';
 import { ENEMY_TEMPLATES } from '@/data/units';
 import { Ability, UnitStats, ItemInstance, Hero } from '@/types/core.types';
+import { getRarityTextColor, getRarityBorderColor } from '@/utils/constants';
 
 interface UnitInfoPanelProps {
   unit: GridHero | GridEnemy | null;
@@ -44,7 +45,7 @@ export function UnitInfoPanel({ unit, hoveredItem, roster, inventory, width = 32
   if (isHero && (unit as GridHero).heroInstanceId) {
     heroData = roster.find(h => h.instanceId === (unit as GridHero).heroInstanceId);
     if (heroData?.equippedItem) {
-      equippedItem = inventory.find(i => i.instanceId === heroData.equippedItem) || null;
+      equippedItem = inventory.find(i => i.instanceId === heroData!.equippedItem) || null;
     }
   }
 
@@ -289,39 +290,6 @@ function StatRow({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function getRarityTextColor(rarity: string) {
-  switch (rarity) {
-    case 'common':
-      return 'text-gray-300';
-    case 'uncommon':
-      return 'text-green-300';
-    case 'rare':
-      return 'text-blue-300';
-    case 'epic':
-      return 'text-purple-300';
-    case 'legendary':
-      return 'text-yellow-300';
-    default:
-      return 'text-gray-300';
-  }
-}
-
-function getRarityBorderColor(rarity: string) {
-  switch (rarity) {
-    case 'common':
-      return 'border-gray-400';
-    case 'uncommon':
-      return 'border-green-400';
-    case 'rare':
-      return 'border-blue-400';
-    case 'epic':
-      return 'border-purple-400';
-    case 'legendary':
-      return 'border-yellow-400';
-    default:
-      return 'border-gray-400';
-  }
-}
 
 function ItemInfoDisplay({ item, width = 320 }: { item: ItemInstance; width?: number }) {
   const isImageSprite = item.spritePath?.startsWith('/icons/');

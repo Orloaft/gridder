@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
-import { BattleEvent, BattleEventType } from '@/systems/BattleSimulator';
+import { BattleEvent, BattleEventType } from '@/types/battle.types';
 
 interface CombatLogProps {
   events: BattleEvent[];

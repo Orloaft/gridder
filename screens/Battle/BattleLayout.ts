@@ -1,5 +1,5 @@
 import { AnyGridOccupant, GridOccupantType } from '@/types/grid.types';
-import { BattleState, BattleEventType } from '@/systems/BattleSimulator';
+import { BattleState, BattleEventType } from '@/types/battle.types';
 import { generateButtonIcon } from '@/utils/generatePlaceholder';
 import { useGameStore } from '@/store/gameStore';
 import { getStageById, getNextUnlockedStage } from '@/data/stages';
@@ -23,36 +23,12 @@ export function createBattleLayout(
   let currentEvent = battleState.events[currentEventIndex];
   const isWaveTransition = currentEvent?.type === BattleEventType.WaveComplete;
 
-  console.log('[BattleLayout] Battle state check:', {
-    currentEventIndex,
-    totalEvents: battleState.events.length,
-    battleFinished,
-    winner: battleState.winner,
-    isVictory,
-    isWaveTransition,
-    currentEventType: currentEvent?.type,
-    firstEvents: battleState.events.slice(0, 3).map(e => e.type),
-    currentWave: battleState.currentWave,
-    totalWaves: battleState.totalWaves
-  });
-
   // WAVE TRANSITION SCREEN - Show decision UI between waves
   // Show this UI when we're paused after a wave transition has been applied
   const prevEvent = currentEventIndex > 0 ? battleState.events[currentEventIndex - 1] : null;
   const justCompletedWaveTransition = prevEvent?.type === BattleEventType.WaveTransition;
 
-  console.log('[BattleLayout] Checking for pause state:', {
-    currentEventIndex,
-    totalEvents: battleState.events.length,
-    prevEventType: prevEvent?.type,
-    justCompletedWaveTransition,
-    currentWave: battleState.currentWave,
-    totalWaves: battleState.totalWaves,
-    winner: battleState.winner
-  });
-
   if (justCompletedWaveTransition && prevEvent) {
-    console.log('[BattleLayout] ✅ Detected wave transition pause - showing formation UI');
     // Use the previous wave transition event for data
     currentEvent = prevEvent;
     const state = useGameStore.getState();
@@ -177,7 +153,6 @@ export function createBattleLayout(
         onClick: () => {
           // Open inventory management UI
           const gameState = useGameStore.getState();
-          console.log('[Battle] Opening battle inventory management');
           // Navigate to battle inventory screen
           gameState.navigate(ScreenType.BattleInventory);
         },
@@ -242,26 +217,8 @@ export function createBattleLayout(
   // Note: Retreat button removed - retreat decisions are now made during wave transitions
 
   // Heroes - use their current positions from battle state
-  console.log(`[BattleLayout] === BATTLE LAYOUT HERO POSITIONS (Wave ${battleState.currentWave}) ===`);
   battleState.heroes.forEach((hero, index) => {
     if (!hero.isAlive) return; // Don't render dead units
-
-    console.log(`[BattleLayout] ${hero.name}: battleState position (${hero.position.row},${hero.position.col})`);
-
-    // Debug hero positions after wave transitions
-    if (battleState.currentWave >= 3) {
-      console.log(`[BattleLayout] Rendering hero ${hero.name} at position (${hero.position.row},${hero.position.col})`);
-    }
-
-    // Debug first hero position
-    if (index === 0 && currentEventIndex < 5) {
-      console.log(`[BattleLayout] Creating hero occupant:`, {
-        name: hero.name,
-        id: hero.id,
-        originalPosition: hero.position,
-        occupantPosition: hero.position
-      });
-    }
 
     occupants.push({
       id: `hero-${hero.id}`,
@@ -285,14 +242,6 @@ export function createBattleLayout(
   const aliveEnemies = battleState.enemies.filter(e => e.isAlive);
   const spawnedEnemies = aliveEnemies.filter(e => !e.wave || e.wave <= battleState.currentWave);
 
-  console.log(`[BattleLayout] Rendering enemies:`, {
-    currentWave: battleState.currentWave,
-    totalWaves: battleState.totalWaves,
-    totalAliveEnemies: aliveEnemies.length,
-    spawnedEnemies: spawnedEnemies.length,
-    enemyDetails: aliveEnemies.map(e => ({ name: e.name, wave: e.wave, spawned: !e.wave || e.wave <= battleState.currentWave, pos: e.position }))
-  });
-
   battleState.enemies.forEach((enemy) => {
     if (!enemy.isAlive) return; // Don't render dead units
 
@@ -302,7 +251,6 @@ export function createBattleLayout(
     // CRITICAL: Only render enemies that have spawned
     // Unspawned enemies are at col: 8 (off-screen) and shouldn't be visible yet
     if (!hasSpawned) {
-      console.log(`[BattleLayout] Skipping unspawned enemy:`, { name: enemy.name, wave: enemy.wave, currentWave: battleState.currentWave, pos: enemy.position });
       return;
     }
 

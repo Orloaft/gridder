@@ -110,7 +110,7 @@ export function HeroUnlockPanel({ onClose, showOnlyAffordable = false }: HeroUnl
 
                 {/* Hero Icon */}
                 <div className="text-4xl mb-2 text-center relative z-10">
-                  {hero.icon}
+                  {hero.spritePath}
                 </div>
 
                 {/* Hero Name */}
@@ -189,7 +189,7 @@ export function HeroUnlockPanel({ onClose, showOnlyAffordable = false }: HeroUnl
                     w-24 h-24 rounded-lg flex items-center justify-center text-5xl
                     bg-gradient-to-br ${getRarityColor(hero.rarity)}
                   `}>
-                    {hero.icon}
+                    {hero.spritePath}
                   </div>
                 </div>
 
@@ -200,7 +200,7 @@ export function HeroUnlockPanel({ onClose, showOnlyAffordable = false }: HeroUnl
                     <span className={`
                       px-2 py-1 rounded text-xs font-semibold
                       ${hero.rarity === 'legendary' ? 'bg-yellow-600 text-yellow-100' :
-                        hero.rarity === 'epic' ? 'bg-purple-600 text-purple-100' :
+                        hero.rarity === 'mythic' ? 'bg-purple-600 text-purple-100' :
                         hero.rarity === 'rare' ? 'bg-blue-600 text-blue-100' :
                         'bg-gray-600 text-gray-100'}
                     `}>
@@ -214,9 +214,9 @@ export function HeroUnlockPanel({ onClose, showOnlyAffordable = false }: HeroUnl
                   <div className="mb-3">
                     <h4 className="text-white text-sm font-semibold mb-1">Starting Abilities:</h4>
                     <div className="flex flex-wrap gap-2">
-                      {hero.abilities.map(abilityId => (
-                        <span key={abilityId} className="bg-gray-700 px-2 py-1 rounded text-xs text-gray-300">
-                          {abilityId.replace(/_/g, ' ')}
+                      {hero.abilities.map(ability => (
+                        <span key={ability.id} className="bg-gray-700 px-2 py-1 rounded text-xs text-gray-300">
+                          {ability.name || ability.id.replace(/_/g, ' ')}
                         </span>
                       ))}
                     </div>
@@ -238,7 +238,7 @@ export function HeroUnlockPanel({ onClose, showOnlyAffordable = false }: HeroUnl
                     </div>
                     <div>
                       <span className="text-gray-500">Range:</span>
-                      <p className="text-green-400 font-semibold">{hero.baseStats.range}</p>
+                      <p className="text-green-400 font-semibold">{(hero.baseStats as any).range ?? 1}</p>
                     </div>
                   </div>
                 </div>

@@ -4,6 +4,7 @@ import React, { useRef, useEffect, forwardRef } from 'react';
 import Image from 'next/image';
 import { ItemInstance } from '@/types/core.types';
 import { animateCardEntrance } from '@/animations/cardAnimations';
+import { getRarityClasses, getRarityTextColor } from '@/utils/constants';
 
 interface InventoryGridProps {
   gold: number;
@@ -36,39 +37,7 @@ export const InventoryGrid = forwardRef<HTMLDivElement, InventoryGridProps>(
     const rows = 12; // Increased for player stats
     const cols = 3;
 
-  const getRarityColor = (rarity: string) => {
-    switch (rarity) {
-      case 'common':
-        return 'border-gray-400 bg-gray-700/50';
-      case 'uncommon':
-        return 'border-green-400 bg-green-700/50';
-      case 'rare':
-        return 'border-blue-400 bg-blue-700/50';
-      case 'epic':
-        return 'border-purple-400 bg-purple-700/50';
-      case 'legendary':
-        return 'border-yellow-400 bg-yellow-700/50';
-      default:
-        return 'border-gray-400 bg-gray-700/50';
-    }
-  };
-
-  const getRarityTextColor = (rarity: string) => {
-    switch (rarity) {
-      case 'common':
-        return 'text-gray-300';
-      case 'uncommon':
-        return 'text-green-300';
-      case 'rare':
-        return 'text-blue-300';
-      case 'epic':
-        return 'text-purple-300';
-      case 'legendary':
-        return 'text-yellow-300';
-      default:
-        return 'text-gray-300';
-    }
-  };
+  const getRarityColor = getRarityClasses;
 
   return (
     <div

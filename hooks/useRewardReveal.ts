@@ -35,7 +35,6 @@ export function useRewardReveal() {
     }
 
     hasStartedRef.current = true;
-    console.log('[useRewardReveal] Starting reward reveal - Gold:', pendingRewards.goldEarned, 'Gems:', pendingRewards.gemsEarned, 'Items:', pendingRewards.items.length);
 
     // Create reward reveal manager
     const manager = new RewardRevealManager(pendingRewards);
@@ -43,14 +42,11 @@ export function useRewardReveal() {
 
     // Handle skip
     const handleSkip = () => {
-      console.log('[useRewardReveal] Skip button pressed');
       manager.skip();
     };
 
     // Handle continue (after summary phase)
     const handleContinue = () => {
-      console.log('[useRewardReveal] Continue button pressed');
-
       // Get fresh state from store
       const state = useGameStore.getState();
 
@@ -73,7 +69,6 @@ export function useRewardReveal() {
 
       // Check if any heroes need to level up
       if (state.levelUpQueue && state.levelUpQueue.length > 0) {
-        console.log('[useRewardReveal] Processing level up queue after rewards');
         state.processNextLevelUp();
       } else {
         // No level ups, navigate back to location map

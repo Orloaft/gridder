@@ -14,7 +14,9 @@ import {
   BattleEvent,
   BattleEventType,
   BattleUnit
-} from './BattleSimulator';
+} from '@/types/battle.types';
+import { getDistance, posKey } from '@/utils/targeting';
+import { COOLDOWN_DIVISOR } from '@/utils/constants';
 
 interface Position {
   row: number;
@@ -64,8 +66,6 @@ export class DeterministicBattleSimulatorV2 {
    * Simulate a single wave starting from the given wave number
    */
   public simulateWave(targetWave: number, existingEvents: BattleEvent[] = []): BattleState {
-    console.log(`[DeterministicBattleSimulatorV2] Simulating single wave ${targetWave}`);
-
     // Start with existing events (from previous waves)
     this.events = [...existingEvents];
     this.currentTick = existingEvents.length > 0 ? Math.max(...existingEvents.map(e => e.tick)) : 0;
@@ -74,8 +74,20 @@ export class DeterministicBattleSimulatorV2 {
     const totalWaves = allEnemyWaves.length;
 
     if (targetWave > totalWaves) {
-      console.error(`[DeterministicBattleSimulatorV2] Invalid wave ${targetWave}, max is ${totalWaves}`);
       return this.buildBattleState(targetWave, totalWaves);
+    }
+
+    // When re-simulating from a later wave (e.g. after formation change),
+    // kill enemies from previous waves so they don't block spawning or participate in combat
+    if (targetWave > 1) {
+      for (const unit of this.units.values()) {
+        if (!unit.isHero && unit.wave !== undefined && unit.wave < targetWave) {
+          unit.isAlive = false;
+          if (unit.position.col < this.gridWidth) {
+            this.clearOccupancy(unit.position);
+          }
+        }
+      }
     }
 
     // Spawn and simulate only the target wave
@@ -160,9 +172,6 @@ export class DeterministicBattleSimulatorV2 {
    * This is the main entry point that matches the original BattleSimulator interface
    */
   public simulate(): BattleState {
-    console.error('[DeterministicBattleSimulatorV2] Starting simulation - wave 1 only');
-    console.warn('[DeterministicBattleSimulatorV2] Starting simulation - wave 1 only');
-
     // Clear previous state
     this.events = [];
     this.currentTick = 0;
@@ -187,11 +196,8 @@ export class DeterministicBattleSimulatorV2 {
       // Check if hero already has a position (from formation), otherwise use default
       const position = (hero as any).position || this.getHeroStartPosition(index);
 
-      console.log(`[V2 InitializeUnit] Hero ${hero.name}: Using position (${position.row}, ${position.col})`);
-
       // Validate position
       if (position.row < 0 || position.row >= 8 || position.col < 0 || position.col >= 8) {
-        console.error(`[initializeUnits] Invalid hero position for ${hero.name} at index ${index}: (${position.row}, ${position.col})`);
       }
 
       const abilityCooldowns = new Map<string, number>();
@@ -209,14 +215,13 @@ export class DeterministicBattleSimulatorV2 {
         position,
         stats: { ...hero.currentStats },
         cooldown: 0,
-        cooldownRate: hero.currentStats.speed / 10,
+        cooldownRate: hero.currentStats.speed / COOLDOWN_DIVISOR,
         abilities: [...hero.abilities],
         abilityCooldowns,
         isAlive: true,
         isHero: true
       };
 
-      console.error(`[Initialize Hero] ${hero.name}: HP=${hero.currentStats.hp}/${hero.currentStats.maxHp}, Defense=${hero.currentStats.defense}`);
       this.units.set(hero.instanceId, unit);
       this.setOccupancy(position, hero.instanceId);
     });
@@ -237,7 +242,6 @@ export class DeterministicBattleSimulatorV2 {
 
           // Validate position for wave 1 enemies
           if (waveIndex === 0 && (position.row < 0 || position.row >= 8 || position.col < 0 || position.col >= 8)) {
-            console.error(`[initializeUnits] Invalid enemy position for ${enemy.name} at index ${enemyIndex}: (${position.row}, ${position.col})`);
           }
 
           const abilityCooldowns = new Map<string, number>();
@@ -256,7 +260,7 @@ export class DeterministicBattleSimulatorV2 {
             position,
             stats: { ...enemy.currentStats },
             cooldown: 0,
-            cooldownRate: enemy.currentStats.speed / 10,
+            cooldownRate: enemy.currentStats.speed / COOLDOWN_DIVISOR,
             abilities: enemy.abilities || [],
             abilityCooldowns,
             isAlive: true,
@@ -278,7 +282,6 @@ export class DeterministicBattleSimulatorV2 {
 
         // Validate position
         if (position.row < 0 || position.row >= 8 || position.col < 0 || position.col >= 8) {
-          console.error(`[initializeUnits] Invalid enemy position for ${enemy.name} at index ${index}: (${position.row}, ${position.col})`);
         }
 
         const abilityCooldowns = new Map<string, number>();
@@ -297,7 +300,7 @@ export class DeterministicBattleSimulatorV2 {
           position,
           stats: { ...enemy.currentStats },
           cooldown: 0,
-          cooldownRate: enemy.currentStats.speed / 10,
+          cooldownRate: enemy.currentStats.speed / COOLDOWN_DIVISOR,
           abilities: enemy.abilities || [],
           abilityCooldowns,
           isAlive: true,
@@ -339,7 +342,6 @@ export class DeterministicBattleSimulatorV2 {
             // Check if target position is already occupied
             if (this.isOccupied(targetPos)) {
               // Find an alternative position
-              console.warn(`[spawnWave] Position ${targetPos.row},${targetPos.col} is occupied, finding alternative for ${enemy.name}`);
               // Try adjacent columns first
               for (let colOffset = 1; colOffset <= 2; colOffset++) {
                 const altCol = targetPos.col - colOffset;
@@ -450,12 +452,10 @@ export class DeterministicBattleSimulatorV2 {
     const usableAbility = this.findUsableAbility(unit, nearestEnemy, enemies, allies);
 
     if (usableAbility) {
-      console.log(`[Ability Use] ${unit.name} preparing to use ${usableAbility.ability.name} on ${usableAbility.targets.map(t => t.name).join(', ')}`);
       // Use ability
       this.useAbility(unit, usableAbility.ability, usableAbility.targets);
       // Set ability cooldown
       unit.abilityCooldowns.set(usableAbility.ability.id, usableAbility.ability.cooldown);
-      console.log(`[Ability Cooldown] Set ${usableAbility.ability.name} cooldown to ${usableAbility.ability.cooldown}`);
     } else if (distance > 1) {
       // Move closer
       const newPos = this.findMovePosition(unit, nearestEnemy);
@@ -464,10 +464,6 @@ export class DeterministicBattleSimulatorV2 {
         const toPos = { ...newPos };
 
         // Debug first few moves
-        if (this.events.filter(e => e.type === BattleEventType.Move).length < 3) {
-          console.log(`[V2 Move] ${unit.name} moving from (${fromPos.row},${fromPos.col}) to (${toPos.row},${toPos.col})`);
-        }
-
         // Add move event
         this.events.push({
           type: BattleEventType.Move,
@@ -489,8 +485,6 @@ export class DeterministicBattleSimulatorV2 {
       // Basic attack
       const damage = Math.max(1, unit.stats.damage - Math.floor(nearestEnemy.stats.defense * 0.3));
 
-      console.log(`[Basic Attack] ${unit.name} attacks ${nearestEnemy.name}: baseDamage=${unit.stats.damage}, defense=${nearestEnemy.stats.defense}, final=${damage}, targetHP=${nearestEnemy.stats.hp}`);
-
       // Add attack event
       this.events.push({
         type: BattleEventType.Attack,
@@ -506,8 +500,6 @@ export class DeterministicBattleSimulatorV2 {
 
       // Apply damage
       nearestEnemy.stats.hp -= damage;
-
-      console.log(`[Basic Attack Result] ${nearestEnemy.name} HP after: ${nearestEnemy.stats.hp}`);
 
       // Add damage event
       this.events.push({
@@ -598,22 +590,8 @@ export class DeterministicBattleSimulatorV2 {
           const rawDamage = effect.value;
           const damage = Math.max(1, rawDamage - Math.floor(target.stats.defense * 0.3));
 
-          // Check if this is the one-shot bug
-          if (target.name.includes('Adventurer') && damage < 50 && target.stats.hp > 50) {
-            console.error(`[BUG DETECTED] Wraith about to one-shot ${target.name}!`);
-            console.error(`  Raw damage: ${rawDamage}`);
-            console.error(`  Defense: ${target.stats.defense}`);
-            console.error(`  Final damage: ${damage}`);
-            console.error(`  Target HP before: ${target.stats.hp}`);
-            console.error(`  This should NOT kill the target!`);
-          }
-
-          console.error(`[Ability Damage] ${caster.name} uses ${ability.name} on ${target.name}: raw=${rawDamage}, defense=${target.stats.defense}, final=${damage}, targetHP before=${target.stats.hp}`);
-
           target.stats.hp -= damage;
           totalDamageDealt += damage; // Track for lifesteal
-
-          console.log(`[Ability Damage Result] ${target.name} HP after damage: ${target.stats.hp} (took ${damage} damage)`);
 
           // Add damage event
           this.events.push({
@@ -631,7 +609,6 @@ export class DeterministicBattleSimulatorV2 {
 
           // Check for death
           if (target.stats.hp <= 0) {
-            console.log(`[Death] ${target.name} died! HP was ${target.stats.hp} after taking ${damage} damage`);
             target.isAlive = false;
             this.clearOccupancy(target.position);
 
@@ -665,8 +642,6 @@ export class DeterministicBattleSimulatorV2 {
           // Lifesteal healing for the caster based on actual damage dealt
           const healAmount = Math.floor(totalDamageDealt * effect.value);
           const actualHeal = Math.min(healAmount, caster.stats.maxHp - caster.stats.hp);
-
-          console.log(`[Lifesteal] ${caster.name} heals for ${actualHeal} (${effect.value * 100}% of ${totalDamageDealt} damage)`);
 
           if (actualHeal > 0) {
             caster.stats.hp += actualHeal;
@@ -746,7 +721,6 @@ export class DeterministicBattleSimulatorV2 {
         to: newPos
       });
 
-      console.log(`[WaveTransition] Hero ${hero.name} (${hero.id}) moving from (${oldPos.row},${oldPos.col}) to (${newPos.row},${newPos.col})`);
     });
 
     // Add transition event with hero position data
@@ -795,10 +769,6 @@ export class DeterministicBattleSimulatorV2 {
     const col = index % 2; // Alternate between col 0 and 1
 
     // Log the first few positions for debugging
-    if (index < 3) {
-      console.log(`[V2 getHeroStartPosition] Hero ${index}: row=${row}, col=${col}`);
-    }
-
     // Ensure row never exceeds 7
     return { row: Math.min(row, 7), col };
   }
@@ -851,7 +821,6 @@ export class DeterministicBattleSimulatorV2 {
     // Debug: Log if we have any enemies with invalid positions
     const invalidEnemies = allEnemies.filter(u => u.position.col >= 8);
     if (invalidEnemies.length > 0) {
-      console.log(`[getEnemies] Filtering out ${invalidEnemies.length} off-grid enemies`);
     }
 
     return validEnemies;
@@ -873,7 +842,6 @@ export class DeterministicBattleSimulatorV2 {
 
     // Double-check for safety and reject invalid positions
     if (position.col >= 8 || position.row >= 8 || position.col < 0 || position.row < 0) {
-      console.error(`[unitToBattleUnit] REJECTING Unit ${unit.name} with invalid position (${position.row},${position.col})`);
       return null; // Don't include units with invalid positions
     }
 
@@ -1003,11 +971,11 @@ export class DeterministicBattleSimulatorV2 {
   }
 
   private getDistance(a: Position, b: Position): number {
-    return Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col));
+    return getDistance(a, b);
   }
 
   private posKey(pos: Position): string {
-    return `${pos.row},${pos.col}`;
+    return posKey(pos);
   }
 
   private isOccupied(pos: Position): boolean {

@@ -3,68 +3,16 @@ import { GridPosition } from '@/types/grid.types';
 import { GridManager } from './GridManager';
 import { PositionManager } from './PositionManager';
 import { AnimationCoordinator } from './AnimationCoordinator';
+import { COOLDOWN_DIVISOR } from '@/utils/constants';
 
-// Battle event types
-export enum BattleEventType {
-  BattleStart = 'battleStart',
-  WaveComplete = 'waveComplete', // Wave completed - pause for player decision
-  WaveTransition = 'waveTransition', // Smooth transition animation between waves
-  WaveStart = 'waveStart', // New wave of enemies entering
-  Tick = 'tick', // Replaces TurnStart - fires each tick with cooldown updates
-  Move = 'move',
-  Attack = 'attack',
-  Damage = 'damage',
-  Heal = 'heal',
-  Death = 'death',
-  Victory = 'victory',
-  Defeat = 'defeat',
-  StatusApplied = 'statusApplied',
-  StatusExpired = 'statusExpired',
-  CriticalHit = 'criticalHit',
-  Evaded = 'evaded',
-  AbilityUsed = 'abilityUsed', // When a unit uses an ability
-}
-
-export interface BattleEvent {
-  type: BattleEventType;
-  timestamp: number;
-  data: any;
-}
-
-export interface BattleUnit {
-  id: string;
-  name: string;
-  class?: string;
-  spritePath?: string;
-  baseStats: UnitStats; // Original stats before buffs/debuffs
-  stats: UnitStats; // Current stats (modified by status effects)
-  statusEffects: StatusEffect[]; // Active buffs/debuffs
-  isHero: boolean;
-  isAlive: boolean;
-  position: GridPosition;
-  range: number; // Attack range (1 = melee, 2+ = ranged)
-  cooldown: number; // Current cooldown (0-100, acts at 100)
-  cooldownRate: number; // How much cooldown fills per tick (based on speed)
-  abilities: Ability[]; // Available abilities
-  abilityCooldowns: Map<string, number>; // Track cooldowns for each ability by ID
-  wave?: number; // Which wave this enemy belongs to (1-indexed, undefined for heroes)
-}
-
-export interface BattleState {
-  tick: number; // Battle time in ticks (replaces turn-based system)
-  heroes: BattleUnit[];
-  enemies: BattleUnit[];
-  events: BattleEvent[];
-  winner: 'heroes' | 'enemies' | null;
-  currentWave: number; // Current wave number (1-indexed)
-  totalWaves: number; // Total number of waves in battle
-  enemyWaves: Enemy[][]; // Remaining waves of enemies to spawn
-}
+// Re-export battle types from canonical location
+export { BattleEventType, BattleEvent, BattleUnit, BattleState } from '@/types/battle.types';
+import { BattleEventType, BattleEvent, BattleUnit, BattleState } from '@/types/battle.types';
 
 /**
- * Cooldown-based battle simulator (like The Bazaar)
- * Units act when their cooldown reaches 100%
- * Speed determines how fast cooldown fills
+ * @deprecated This class is no longer used at runtime.
+ * DeterministicBattleSimulatorV2 is the active simulator.
+ * Kept as architectural reference only — safe to delete.
  */
 export class BattleSimulator {
   private state: BattleState;
@@ -161,7 +109,7 @@ export class BattleSimulator {
         position,
         range: maxAbilityRange, // Set range based on abilities
         cooldown: 0, // Start at 0, will fill to 100
-        cooldownRate: h.currentStats.speed / 10, // Divide by 10 for slower, more visible cooldowns
+        cooldownRate: h.currentStats.speed / COOLDOWN_DIVISOR,
         abilities: h.abilities.map(a => ({ ...a })), // Copy abilities
         abilityCooldowns,
       };
@@ -194,7 +142,7 @@ export class BattleSimulator {
         position,
         range: maxAbilityRange, // Set range based on abilities
         cooldown: 0, // Start at 0, will fill to 100
-        cooldownRate: e.currentStats.speed / 10, // Divide by 10 for slower, more visible cooldowns
+        cooldownRate: e.currentStats.speed / COOLDOWN_DIVISOR,
         abilities: enemyAbilities.map(a => ({ ...a })), // Copy abilities
         abilityCooldowns,
         wave: 1, // First wave enemies
@@ -209,12 +157,10 @@ export class BattleSimulator {
         // If position is occupied, find nearest empty
         const nearestEmpty = this.findNearestEmptyPosition(unit.position);
         if (nearestEmpty) {
-          console.log(`[BattleSimulator] Moving ${unit.name} to nearest empty tile:`, nearestEmpty);
-          unit.position = nearestEmpty;
+            unit.position = nearestEmpty;
           this.positionManager.initializeUnit(unit.id, nearestEmpty);
         } else {
-          console.error(`[BattleSimulator] Failed to place unit ${unit.name}`);
-        }
+          }
       }
 
       // Also update legacy GridManager for compatibility
@@ -231,14 +177,6 @@ export class BattleSimulator {
       totalWaves: enemyWaves.length,
       enemyWaves: enemyWaves.slice(1), // Store remaining waves (skip first wave already spawned)
     };
-
-    console.log('[BattleSimulator] Initialized with:', {
-      heroes: heroUnits.length,
-      wave1Enemies: enemyUnits.length,
-      totalWaves: enemyWaves.length,
-      remainingWaves: enemyWaves.slice(1).length,
-      allEnemiesInState: enemyUnits.map(e => ({ name: e.name, wave: e.wave, pos: e.position }))
-    });
 
     this.addEvent(BattleEventType.BattleStart, {
       heroes: heroUnits.map((h) => h.name),
@@ -376,7 +314,6 @@ export class BattleSimulator {
       // Check if position is reserved this tick
       const moveKey = `${move.row},${move.col}`;
       if (reservedPositions && reservedPositions.has(moveKey)) {
-        console.log(`[moveTowards] ${unit.name} blocked from (${move.row},${move.col}) - reserved this tick`);
         continue; // Try next move option
       }
 
@@ -385,12 +322,10 @@ export class BattleSimulator {
       const gmOccupant = this.gridManager.getOccupant(move);
 
       if (pmOccupant && pmOccupant !== unit.id) {
-        console.log(`[moveTowards] ${unit.name} blocked by PositionManager: ${pmOccupant} at (${move.row},${move.col})`);
         continue;
       }
 
       if (gmOccupant && gmOccupant !== unit.id) {
-        console.log(`[moveTowards] ${unit.name} blocked by GridManager: ${gmOccupant} at (${move.row},${move.col})`);
         continue;
       }
 
@@ -404,7 +339,6 @@ export class BattleSimulator {
         // Update GridManager atomically
         if (!this.gridManager.move(unit.id, oldPosition, move)) {
           // GridManager failed - rollback PositionManager
-          console.error(`[moveTowards] GridManager move failed, rolling back PositionManager`);
           this.positionManager.moveUnit(unit.id, oldPosition);
           continue;
         }
@@ -420,7 +354,6 @@ export class BattleSimulator {
           to: move,
         });
 
-        console.log(`[moveTowards] ${unit.name} moves from (${oldPosition.row},${oldPosition.col}) to (${move.row},${move.col})`);
         return;
       } else {
         // Move rejected - check why
@@ -429,7 +362,6 @@ export class BattleSimulator {
           // Find who is occupying
           const occupyingUnit = [...this.state.heroes, ...this.state.enemies].find(u => u.id === occupant);
           if (occupyingUnit) {
-            console.log(`[moveTowards] ${unit.name} blocked from (${move.row},${move.col}) by ${occupyingUnit.name}`);
           }
         }
       }
@@ -437,7 +369,6 @@ export class BattleSimulator {
     }
 
     // No valid moves found
-    console.log(`[moveTowards] ${unit.name} at (${oldPosition.row},${oldPosition.col}) has no valid moves`);
   }
 
   /**
@@ -530,7 +461,7 @@ export class BattleSimulator {
     }
 
     // Update cooldown rate based on new speed
-    unit.cooldownRate = unit.stats.speed / 10;
+    unit.cooldownRate = unit.stats.speed / COOLDOWN_DIVISOR;
   }
 
   /**
@@ -1051,7 +982,6 @@ export class BattleSimulator {
     }
 
     if (issues.length > 0) {
-      console.error('[BattleSimulator] Position sync issues detected:', issues);
     }
   }
 
@@ -1118,7 +1048,6 @@ export class BattleSimulator {
       const allUnitsForCheck = [...this.state.heroes, ...this.state.enemies];
       const issues = this.gridManager.verifyConsistency(allUnitsForCheck);
       if (issues.length > 0) {
-        console.error('[BattleSimulator] Grid consistency issues found:', issues);
       }
     }
 
@@ -1317,7 +1246,6 @@ export class BattleSimulator {
     // DEBUG: Verify no stacking at end of tick using GridManager
     const violations = this.gridManager.verifyNoStacking();
     if (violations.length > 0) {
-      console.error(`[BattleSimulator] Stacking violations detected at tick ${this.state.tick}:`, violations);
     }
   }
 
@@ -1379,14 +1307,10 @@ export class BattleSimulator {
 
     this.state.currentWave++;
 
-    console.log(`[spawnNextWave] Spawning wave ${this.state.currentWave} with ${nextWave.length} enemies`);
-
     // Wave transition with scroll
     const scrollDistance = 2; // Number of grid cells the background scrolls left
     const aliveHeroes = this.state.heroes.filter(h => h.isAlive);
     const aliveEnemies = this.state.enemies.filter(e => e.isAlive);
-
-    console.log(`[spawnNextWave] Starting wave ${this.state.currentWave} transition`);
 
     // Update positions IMMEDIATELY to keep logic and visuals in sync
     // This prevents the mismatch between visual and logical positions
@@ -1400,7 +1324,6 @@ export class BattleSimulator {
 
       // Update position immediately
       hero.position = newPos;
-      console.log(`[spawnNextWave] Hero ${hero.name} logical position updated from col ${oldPos.col} to col ${newPos.col}`);
     });
 
     aliveEnemies.forEach(enemy => {
@@ -1409,7 +1332,6 @@ export class BattleSimulator {
 
       if (newCol >= 0) {
         enemy.position = { row: enemy.position.row, col: newCol };
-        console.log(`[spawnNextWave] Enemy ${enemy.name} logical position updated from col ${oldPos.col} to col ${newCol}`);
       }
     });
 
@@ -1430,7 +1352,6 @@ export class BattleSimulator {
         // Check if hero is in PositionManager
         const currentPos = this.positionManager.getLogicalPosition(hero.id);
         if (!currentPos) {
-          console.warn(`[spawnNextWave] Hero ${hero.name} not in PositionManager, initializing at (${newPos.row},${newPos.col})`);
           this.positionManager.initializeUnit(hero.id, newPos);
           this.gridManager.occupy(newPos, hero.id);
         } else {
@@ -1439,7 +1360,6 @@ export class BattleSimulator {
           if (this.positionManager.moveUnit(hero.id, newPos)) {
             this.gridManager.vacate(oldPos);
             this.gridManager.occupy(newPos, hero.id);
-            console.log(`[spawnNextWave] Synced ${hero.name} position in managers`);
           }
         }
       });
@@ -1456,13 +1376,11 @@ export class BattleSimulator {
           const enemyIndex = this.state.enemies.findIndex(e => e.id === enemy.id);
           if (enemyIndex > -1) {
             this.state.enemies.splice(enemyIndex, 1);
-            console.log(`[spawnNextWave] Removed off-screen enemy ${enemy.name} from state`);
           }
         } else {
           // Sync position managers with already-updated position
           const currentPos = this.positionManager.getLogicalPosition(enemy.id);
           if (!currentPos) {
-            console.warn(`[spawnNextWave] Enemy ${enemy.name} not in PositionManager, initializing at (${newPos.row},${newPos.col})`);
             this.positionManager.initializeUnit(enemy.id, newPos);
             this.gridManager.occupy(newPos, enemy.id);
           } else {
@@ -1471,13 +1389,11 @@ export class BattleSimulator {
             if (this.positionManager.moveUnit(enemy.id, newPos)) {
               this.gridManager.vacate(oldPos);
               this.gridManager.occupy(newPos, enemy.id);
-              console.log(`[spawnNextWave] Synced ${enemy.name} position in managers`);
             }
           }
         }
       });
 
-      console.log(`[spawnNextWave] Updated positions after scroll`);
     }, 1100); // Slightly after animation completes
 
     // Helper function to get enemy position (same as constructor)
@@ -1522,7 +1438,7 @@ export class BattleSimulator {
         position: finalPosition, // Use final position for game logic
         range: maxAbilityRange,
         cooldown: 0,
-        cooldownRate: e.currentStats.speed / 10,
+        cooldownRate: e.currentStats.speed / COOLDOWN_DIVISOR,
         abilities: enemyAbilities.map(a => ({ ...a })),
         abilityCooldowns,
         wave: this.state.currentWave, // Track which wave this enemy belongs to
@@ -1531,9 +1447,6 @@ export class BattleSimulator {
 
     // Add new enemies to battle state
     this.state.enemies.push(...newEnemyUnits);
-
-    console.log(`[spawnNextWave] Added ${newEnemyUnits.length} enemies to state. Total enemies in state: ${this.state.enemies.length}`);
-    console.log(`[spawnNextWave] New enemies:`, newEnemyUnits.map(e => ({ name: e.name, wave: e.wave, pos: e.position, hp: e.stats.hp })));
 
     // Clear any stale positions for enemies before spawning new ones
     // This ensures no collision with dead enemies that weren't properly cleaned up
@@ -1545,7 +1458,6 @@ export class BattleSimulator {
           // Check if this unit is actually alive
           const unit = [...this.state.heroes, ...this.state.enemies].find(u => u.id === occupant);
           if (!unit || !unit.isAlive) {
-            console.log(`[spawnNextWave] Cleaning up stale position (${row},${col}) occupied by ${occupant}`);
             this.positionManager.removeUnit(occupant);
             this.gridManager.vacate(pos);
           }
@@ -1559,7 +1471,6 @@ export class BattleSimulator {
 
       // Validate position is well-formed
       if (!finalPosition || typeof finalPosition.row !== 'number' || typeof finalPosition.col !== 'number') {
-        console.error(`[spawnNextWave] Invalid position for enemy ${enemy.name} at index ${index}:`, finalPosition);
         // Use a fallback position
         const fallbackPosition = { row: 2 + (index % 6), col: 7 };
         enemy.position = fallbackPosition;
@@ -1573,19 +1484,15 @@ export class BattleSimulator {
         // Successfully initialized in PositionManager
         enemy.position = finalPosition;
         this.gridManager.occupy(finalPosition, enemy.id);
-        console.log(`[spawnNextWave] Placed ${enemy.name} at (${finalPosition.row},${finalPosition.col})`);
       } else {
         // Position is occupied, find who's there
         const occupant = this.positionManager.getOccupant(finalPosition);
-        console.log(`[spawnNextWave] Position (${finalPosition.row},${finalPosition.col}) occupied by ${occupant} when trying to place ${enemy.name}, finding alternative`);
         const nearestEmpty = this.findNearestEmptyPosition(finalPosition);
         if (nearestEmpty) {
-          console.log(`[spawnNextWave] Moving ${enemy.name} to nearest empty tile: (${nearestEmpty.row},${nearestEmpty.col})`);
           if (this.positionManager.initializeUnit(enemy.id, nearestEmpty)) {
             enemy.position = nearestEmpty;
             this.gridManager.occupy(nearestEmpty, enemy.id);
           } else {
-            console.error(`[spawnNextWave] Failed to place ${enemy.name} at alternative position`);
             // Remove this enemy from the wave - it can't be placed
             const enemyIndex = newEnemyUnits.indexOf(enemy);
             if (enemyIndex > -1) {
@@ -1593,7 +1500,6 @@ export class BattleSimulator {
             }
           }
         } else {
-          console.error(`[spawnNextWave] No empty tiles available for ${enemy.name}`);
           // Remove this enemy from the wave - it can't be placed
           const enemyIndex = newEnemyUnits.indexOf(enemy);
           if (enemyIndex > -1) {

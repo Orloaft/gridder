@@ -3,7 +3,7 @@ import { PositionManager } from '@/systems/PositionManager';
 import { AnimationCoordinator } from '@/systems/AnimationCoordinator';
 import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
-import { BattleEventType } from '@/systems/BattleSimulator';
+import { BattleEventType } from '@/types/battle.types';
 import gsap from 'gsap';
 
 /**
@@ -13,7 +13,7 @@ import gsap from 'gsap';
 export function usePositionManager() {
   const positionManagerRef = useRef<PositionManager | null>(null);
   const animationCoordinatorRef = useRef<AnimationCoordinator | null>(null);
-  const { currentScreen, currentBattle, useDeterministicBattle } = useGameStore();
+  const { currentScreen, currentBattle } = useGameStore();
 
   // Initialize managers when battle starts
   useEffect(() => {
@@ -29,34 +29,22 @@ export function usePositionManager() {
       // Add a small delay to ensure battle state is fully updated after wave transitions
       const allUnits = [...currentBattle.heroes, ...currentBattle.enemies];
 
-      console.log('[usePositionManager] === Battle State Hero Positions ===');
-      currentBattle.heroes.forEach(hero => {
-        console.log(`[usePositionManager] ${hero.name}: battle state position (${hero.position.row},${hero.position.col})`);
-      });
-
       // Debug: Check for invalid positions before initializing
       // Note: col:8 is valid for off-screen enemies that will slide in
       const invalidUnits = allUnits.filter(u => u.position.col > 8 || u.position.row >= 8 || u.position.col < 0 || u.position.row < 0);
       if (invalidUnits.length > 0) {
-        console.error('[usePositionManager] Found units with invalid positions:');
-        invalidUnits.forEach(u => {
-          console.error(`  - ${u.name} (${u.isHero ? 'Hero' : 'Enemy'}): position (${u.position.row}, ${u.position.col}), alive: ${u.isAlive}`);
-        });
       }
 
       allUnits.forEach(unit => {
         if (unit.isAlive) {
           // Skip units with truly invalid positions (col:8 is valid for off-screen)
           if (unit.position.col > 8 || unit.position.row >= 8 || unit.position.col < 0 || unit.position.row < 0) {
-            console.warn(`[usePositionManager] Skipping unit ${unit.name} with invalid position (${unit.position.row},${unit.position.col})`);
             return;
           }
           // Note: We still track off-screen units at col:8 in position manager
           positionManagerRef.current?.initializeUnit(unit.id, unit.position);
         }
       });
-
-      console.log('[usePositionManager] Initialized with', allUnits.filter(u => u.isAlive).length, 'units');
 
       // IMPORTANT: Force sync visual positions immediately after initialization
       // This prevents the initial movement animation offset bug
@@ -69,7 +57,6 @@ export function usePositionManager() {
           const gridWidth = gridElement.offsetWidth;
           const gridCols = 8; // Standard grid width
           cellSize = gridWidth / gridCols;
-          console.log('[usePositionManager] Detected cell size:', cellSize);
         }
 
         // Update the animation coordinator's cell size
@@ -91,8 +78,6 @@ export function usePositionManager() {
 
               // Log mismatches for debugging
               if (Math.abs(currentLeft - expectedLeft) > 1 || Math.abs(currentTop - expectedTop) > 1) {
-                console.warn(`[usePositionManager] Position mismatch for ${unit.name}: current (${currentLeft}, ${currentTop}) vs expected (${expectedLeft}, ${expectedTop})`);
-
                 // Force correct position
                 element.style.left = `${expectedLeft}px`;
                 element.style.top = `${expectedTop}px`;
@@ -105,7 +90,6 @@ export function usePositionManager() {
           })
           .filter(Boolean) as Array<{unitId: string, element: HTMLElement}>;
 
-        console.log('[usePositionManager] Force syncing initial positions for', units.length, 'units');
         animationCoordinatorRef.current?.syncAllVisualPositions(units);
       };
 

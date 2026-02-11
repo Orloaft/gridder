@@ -95,15 +95,6 @@ export const GameGrid = forwardRef<HTMLDivElement, GameGridProps>(
       {/* Occupants rendered on top */}
       <div ref={ref} className="absolute inset-0 pointer-events-none" style={{ overflow: 'hidden' }}>
         {occupants.map((occupant, index) => {
-          // Debug first few hero positions
-          if (occupant.type === 1 && index < 3) { // GridOccupantType.Hero = 1
-            console.log(`[GameGrid] Rendering occupant ${occupant.id}:`, {
-              position: occupant.position,
-              calculatedLeft: occupant.position.col * cellSize,
-              calculatedTop: occupant.position.row * cellSize,
-              cellSize
-            });
-          }
           return (
             <div
               key={occupant.id}

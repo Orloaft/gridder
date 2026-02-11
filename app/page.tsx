@@ -15,6 +15,7 @@ import { DoomsdayTracker } from '@/components/DoomsdayTracker';
 import { DoomsdayEventModal } from '@/components/DoomsdayEventModal';
 import { TimePassageAnimation } from '@/components/TimePassageAnimation';
 import { HeroUnlockPanel } from '@/components/HeroUnlockPanel';
+import RetreatConfirmation from '@/components/Modals/RetreatConfirmation';
 import { animateGridTransition, animateGridEntrance } from '@/animations/gridTransitions';
 import { audioManager } from '@/utils/audioManager';
 import { getStageById } from '@/data/stages';
@@ -25,7 +26,9 @@ import { useResponsiveGrid } from '@/hooks/useResponsiveGrid';
 import { useRewardReveal } from '@/hooks/useRewardReveal';
 import { useDoomsdaySystem } from '@/hooks/useDoomsdaySystem';
 import { usePositionManager } from '@/hooks/usePositionManager';
-import { GridHero, GridEnemy, isGridHero, isGridEnemy, AnyGridOccupant } from '@/types/grid.types';
+import { useModals } from '@/hooks/useModals';
+import { useBackgroundScroll } from '@/hooks/useBackgroundScroll';
+import { AnyGridOccupant } from '@/types/grid.types';
 import { ItemInstance } from '@/types/core.types';
 import { createCampaignMapLayout } from '@/screens/CampaignMap/CampaignMapLayout';
 import { createLocationMapLayout } from '@/screens/LocationMap/LocationMapLayout';
@@ -46,14 +49,14 @@ export default function Home() {
   const [hoveredStageId, setHoveredStageId] = useState<number | null>(null);
   const [hoveredLocationId, setHoveredLocationId] = useState<string | null>(null);
   const [hoveredShopItem, setHoveredShopItem] = useState<any | null>(null); // For shop items
-  const [showRetreatConfirmation, setShowRetreatConfirmation] = useState(false);
-  const [showDoomsdayEvent, setShowDoomsdayEvent] = useState(false);
-  const [currentDoomsdayEvent, setCurrentDoomsdayEvent] = useState<any>(null);
-  const [showTimePassage, setShowTimePassage] = useState(false);
-  const [timePassageData, setTimePassageData] = useState<any>(null);
-  const [showHeroUnlock, setShowHeroUnlock] = useState(false);
-  const [backgroundScrollX, setBackgroundScrollX] = useState(0);
-  const [isScrolling, setIsScrolling] = useState(false);
+
+  // Modal management
+  const {
+    showRetreatConfirmation, setShowRetreatConfirmation,
+    showDoomsdayEvent, currentDoomsdayEvent, closeDoomsdayEvent,
+    showTimePassage, timePassageData, closeTimePassage,
+    showHeroUnlock, setShowHeroUnlock,
+  } = useModals();
 
   // Auto-advance battle events (200ms base for tick-based combat)
   useBattleAutoAdvance(200);
@@ -75,39 +78,7 @@ export default function Home() {
     processRetreat
   } = useDoomsdaySystem();
 
-  // Listen for time passage events using custom events instead of polling
-  useEffect(() => {
-    const handleTimePassage = (event: CustomEvent) => {
-      const data = event.detail;
-      if (data && !showTimePassage) { // Prevent duplicate triggers
-        setTimePassageData(data);
-        setShowTimePassage(true);
-      }
-    };
-
-    const handleDoomsdayEvent = (event: CustomEvent) => {
-      const eventData = event.detail;
-      if (eventData && !showDoomsdayEvent) { // Prevent duplicate triggers
-        setCurrentDoomsdayEvent(eventData);
-        setShowDoomsdayEvent(true);
-      }
-    };
-
-    const handleOpenHeroUnlock = () => {
-      setShowHeroUnlock(true);
-    };
-
-    // Listen for custom events
-    window.addEventListener('timePassage', handleTimePassage as any);
-    window.addEventListener('doomsdayEvent', handleDoomsdayEvent as any);
-    window.addEventListener('openHeroUnlock', handleOpenHeroUnlock);
-
-    return () => {
-      window.removeEventListener('timePassage', handleTimePassage as any);
-      window.removeEventListener('doomsdayEvent', handleDoomsdayEvent as any);
-      window.removeEventListener('openHeroUnlock', handleOpenHeroUnlock);
-    };
-  }, [showTimePassage, showDoomsdayEvent]);
+  // Modal event listeners are now managed by useModals hook
 
   // Get responsive dimensions
   const responsiveDimensions = useResponsiveGrid();
@@ -146,37 +117,8 @@ export default function Home() {
 
   const prevInventoryLength = useRef(inventory.length);
 
-  // Handle background scrolling for wave transitions
-  useEffect(() => {
-    const handleWaveTransition = (event: CustomEvent) => {
-      const { scrollDistance, duration } = event.detail;
-      // Scroll the background by scrollDistance (not cumulative)
-      setBackgroundScrollX(prev => {
-        const newScrollX = prev + scrollDistance;
-        console.log('[WaveTransition] Scrolling background from', prev, 'to', newScrollX);
-        return newScrollX;
-      });
-      setIsScrolling(true);
-
-      // Reset scrolling flag after animation
-      setTimeout(() => {
-        setIsScrolling(false);
-      }, 1000);
-    };
-
-    window.addEventListener('waveTransition', handleWaveTransition as any);
-
-    return () => {
-      window.removeEventListener('waveTransition', handleWaveTransition as any);
-    };
-  }, []);
-
-  // Reset scroll when battle ends
-  useEffect(() => {
-    if (!currentBattle) {
-      setBackgroundScrollX(0);
-    }
-  }, [currentBattle]);
+  // Background scroll for wave transitions
+  const { backgroundScrollX, isScrolling } = useBackgroundScroll(currentBattle);
 
   // Initialize grid immediately on mount (before loading)
   useEffect(() => {
@@ -615,89 +557,13 @@ export default function Home() {
       )}
 
       {/* Retreat Confirmation Dialog */}
-      {showRetreatConfirmation && (() => {
-        const earnings = calculateRetreatEarnings();
-        if (!earnings) return null;
-
-        return (
-          <div
-            className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center"
-            style={{ zIndex: 10000 }}
-          >
-            <div className="bg-gray-800 border-4 border-yellow-600 rounded-lg p-8 max-w-md shadow-2xl">
-              <h2 className="text-3xl font-bold text-yellow-400 mb-6 text-center">
-                Retreat from Battle?
-              </h2>
-
-              <div className="space-y-4 mb-6">
-                <div className="bg-gray-900 rounded p-4 border-2 border-gray-700">
-                  <p className="text-gray-300 text-sm mb-2">Progress:</p>
-                  <p className="text-white text-xl font-bold">
-                    Wave {earnings.currentWave} / {earnings.totalWaves}
-                  </p>
-                </div>
-
-                <div className="bg-gray-900 rounded p-4 border-2 border-gray-700">
-                  <p className="text-gray-300 text-sm mb-2">Earnings Summary:</p>
-
-                  <div className="space-y-2 text-white">
-                    <div className="flex justify-between">
-                      <span>Base Gold (50%):</span>
-                      <span className="text-yellow-400">
-                        +{Math.floor((getStageById(selectedStageId!)?.rewards.gold ?? 0) * 0.5)}g
-                      </span>
-                    </div>
-
-                    {earnings.goldMultiplier > 1.0 && (
-                      <div className="flex justify-between">
-                        <span>Wave Multiplier:</span>
-                        <span className="text-green-400">×{earnings.goldMultiplier.toFixed(1)}</span>
-                      </div>
-                    )}
-
-                    {earnings.faintedCount > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-red-400">Medical Costs ({earnings.faintedCount} hero{earnings.faintedCount > 1 ? 'es' : ''}):</span>
-                        <span className="text-red-400">-{earnings.medicalCosts}g</span>
-                      </div>
-                    )}
-
-                    <div className="border-t-2 border-gray-600 pt-2 mt-2">
-                      <div className="flex justify-between text-xl font-bold">
-                        <span>Net Profit:</span>
-                        <span className={earnings.netGold > 0 ? 'text-green-400' : 'text-red-400'}>
-                          {earnings.netGold > 0 ? '+' : ''}{earnings.netGold}g
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-red-900 bg-opacity-30 border-2 border-red-600 rounded p-3">
-                  <p className="text-red-300 text-sm text-center">
-                    No XP or item rewards on retreat
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <button
-                  onClick={handleRetreatCancel}
-                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg border-2 border-gray-500 transition-all hover:scale-105"
-                >
-                  Continue Battle
-                </button>
-                <button
-                  onClick={handleRetreatConfirm}
-                  className="flex-1 bg-red-700 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg border-2 border-red-500 transition-all hover:scale-105"
-                >
-                  Retreat
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      <RetreatConfirmation
+        show={showRetreatConfirmation}
+        earnings={calculateRetreatEarnings()}
+        stageBaseGold={selectedStageId ? (getStageById(selectedStageId)?.rewards.gold ?? 0) : 0}
+        onConfirm={handleRetreatConfirm}
+        onCancel={handleRetreatCancel}
+      />
 
       {/* Time Passage Animation */}
       <TimePassageAnimation
@@ -706,19 +572,13 @@ export default function Home() {
         previousDay={timePassageData?.previousDay || 1}
         newDay={timePassageData?.newDay || 1}
         action={timePassageData?.action || ''}
-        onComplete={() => {
-          setShowTimePassage(false);
-          setTimePassageData(null);
-        }}
+        onComplete={closeTimePassage}
       />
 
       {/* Doomsday Event Modal */}
       <DoomsdayEventModal
         event={currentDoomsdayEvent}
-        onClose={() => {
-          setCurrentDoomsdayEvent(null);
-          setShowDoomsdayEvent(false);
-        }}
+        onClose={closeDoomsdayEvent}
       />
 
       {/* Hero Unlock Panel */}
