@@ -8,7 +8,7 @@
  * so all existing hooks, animations, and systems work unchanged.
  */
 
-import { Hero, Enemy, Ability, AbilityType } from '@/types/core.types';
+import { Hero, Enemy, Ability, AbilityType, AbilityEffect, StatusEffect, StatusEffectType, UnitStats } from '@/types/core.types';
 import {
   BattleState,
   BattleEvent,
@@ -30,6 +30,17 @@ interface SimulatedUnit {
   class?: string;
   spritePath?: string;
   position: Position;
+  baseStats: {
+    hp: number;
+    maxHp: number;
+    damage: number;
+    speed: number;
+    defense: number;
+    critChance: number;
+    critDamage: number;
+    evasion: number;
+    accuracy: number;
+  };
   stats: {
     hp: number;
     maxHp: number;
@@ -41,10 +52,11 @@ interface SimulatedUnit {
     evasion: number;
     accuracy: number;
   };
+  statusEffects: StatusEffect[];
   cooldown: number;
   cooldownRate: number;
   abilities: Ability[];
-  abilityCooldowns: Map<string, number>; // Track cooldowns for each ability
+  abilityCooldowns: Map<string, number>;
   isAlive: boolean;
   wave?: number;
   isHero: boolean;
@@ -213,7 +225,9 @@ export class DeterministicBattleSimulatorV2 {
         class: hero.class,
         spritePath: hero.spritePath,
         position,
+        baseStats: { ...hero.currentStats },
         stats: { ...hero.currentStats },
+        statusEffects: [],
         cooldown: 0,
         cooldownRate: hero.currentStats.speed / COOLDOWN_DIVISOR,
         abilities: [...hero.abilities],
@@ -258,7 +272,9 @@ export class DeterministicBattleSimulatorV2 {
             name: enemy.name,
             spritePath: enemy.spritePath,
             position,
+            baseStats: { ...enemy.currentStats },
             stats: { ...enemy.currentStats },
+            statusEffects: [],
             cooldown: 0,
             cooldownRate: enemy.currentStats.speed / COOLDOWN_DIVISOR,
             abilities: enemy.abilities || [],
@@ -298,7 +314,9 @@ export class DeterministicBattleSimulatorV2 {
           name: enemy.name,
           spritePath: enemy.spritePath,
           position,
+          baseStats: { ...enemy.currentStats },
           stats: { ...enemy.currentStats },
+          statusEffects: [],
           cooldown: 0,
           cooldownRate: enemy.currentStats.speed / COOLDOWN_DIVISOR,
           abilities: enemy.abilities || [],
@@ -401,10 +419,21 @@ export class DeterministicBattleSimulatorV2 {
         return 'victory';
       }
 
+      // Process status effects for all alive units (DoTs, regen, expiry)
+      for (const unit of [...aliveHeroes, ...aliveEnemies]) {
+        if (unit.statusEffects.length > 0) {
+          this.processStatusEffects(unit);
+          if (!unit.isAlive) continue; // Died from DoT
+        }
+      }
+
+      // Re-check after status effects (someone might have died)
+      if (this.getAliveHeroes().length === 0) return 'defeat';
+      if (this.getAliveEnemies().length === 0) return 'victory';
+
       // Update cooldowns for all alive units
       const cooldownUpdates: any[] = [];
-      [...aliveHeroes, ...aliveEnemies].forEach(unit => {
-        const oldCooldown = unit.cooldown;
+      [...this.getAliveHeroes(), ...this.getAliveEnemies()].forEach(unit => {
         unit.cooldown = Math.min(100, unit.cooldown + unit.cooldownRate);
         cooldownUpdates.push({
           unitId: unit.id,
@@ -421,12 +450,20 @@ export class DeterministicBattleSimulatorV2 {
       });
 
       // Process actions for units at 100% cooldown
-      const readyUnits = [...aliveHeroes, ...aliveEnemies].filter(u => u.cooldown >= 100);
-      readyUnits.sort((a, b) => b.cooldown - a.cooldown); // Higher cooldown acts first
+      const readyUnits = [...this.getAliveHeroes(), ...this.getAliveEnemies()].filter(u => u.cooldown >= 100);
+      readyUnits.sort((a, b) => b.cooldown - a.cooldown);
 
       for (const unit of readyUnits) {
+        if (!unit.isAlive) continue; // May have died during this tick
+
+        // Check if unit is crowd-controlled
+        if (this.isControlled(unit)) {
+          unit.cooldown = 0;
+          continue; // Skip turn
+        }
+
         this.processUnitAction(unit);
-        unit.cooldown = 0; // Reset after action
+        unit.cooldown = 0;
       }
     }
 
@@ -437,7 +474,6 @@ export class DeterministicBattleSimulatorV2 {
    * Process a single unit's action (abilities, move, or attack)
    */
   private processUnitAction(unit: SimulatedUnit) {
-    // Find targets
     const enemies = this.getAliveUnits().filter(u => u.isHero !== unit.isHero);
     const allies = this.getAliveUnits().filter(u => u.isHero === unit.isHero && u.id !== unit.id);
 
@@ -447,85 +483,65 @@ export class DeterministicBattleSimulatorV2 {
     if (!nearestEnemy) return;
 
     const distance = this.getDistance(unit.position, nearestEnemy.position);
+    const silenced = this.isSilenced(unit);
+    const rooted = this.isRooted(unit);
 
-    // Check if we can use an ability
-    const usableAbility = this.findUsableAbility(unit, nearestEnemy, enemies, allies);
+    // Check if we can use an ability (not silenced)
+    const usableAbility = silenced ? null : this.findUsableAbility(unit, nearestEnemy, enemies, allies);
 
     if (usableAbility) {
-      // Use ability
-      this.useAbility(unit, usableAbility.ability, usableAbility.targets);
-      // Set ability cooldown
+      this.useAbility(unit, usableAbility.ability, usableAbility.targets, enemies, allies);
       unit.abilityCooldowns.set(usableAbility.ability.id, usableAbility.ability.cooldown);
-    } else if (distance > 1) {
-      // Move closer
+    } else if (distance > 1 && !rooted) {
+      // Move closer (not rooted)
       const newPos = this.findMovePosition(unit, nearestEnemy);
       if (newPos && this.posKey(newPos) !== this.posKey(unit.position)) {
         const fromPos = { ...unit.position };
         const toPos = { ...newPos };
 
-        // Debug first few moves
-        // Add move event
         this.events.push({
           type: BattleEventType.Move,
           tick: this.currentTick,
-          data: {
-            unit: unit.name,
-            unitId: unit.id,
-            from: fromPos,
-            to: toPos
-          }
+          data: { unit: unit.name, unitId: unit.id, from: fromPos, to: toPos }
         });
 
-        // Update position
         this.clearOccupancy(unit.position);
         unit.position = newPos;
         this.setOccupancy(newPos, unit.id);
       }
-    } else {
-      // Basic attack
-      const damage = Math.max(1, unit.stats.damage - Math.floor(nearestEnemy.stats.defense * 0.3));
+    } else if (distance <= 1) {
+      // Basic attack with shield absorption
+      const rawDamage = Math.max(1, unit.stats.damage - Math.floor(nearestEnemy.stats.defense * 0.3));
+      const actualDamage = this.applyShieldAbsorption(nearestEnemy, rawDamage);
 
-      // Add attack event
       this.events.push({
         type: BattleEventType.Attack,
         tick: this.currentTick,
         data: {
-          attacker: unit.name,
-          attackerId: unit.id,
-          target: nearestEnemy.name,
-          targetId: nearestEnemy.id,
-          damage
+          attacker: unit.name, attackerId: unit.id,
+          target: nearestEnemy.name, targetId: nearestEnemy.id,
+          damage: rawDamage
         }
       });
 
-      // Apply damage
-      nearestEnemy.stats.hp -= damage;
+      nearestEnemy.stats.hp -= actualDamage;
 
-      // Add damage event
       this.events.push({
         type: BattleEventType.Damage,
         tick: this.currentTick,
         data: {
-          target: nearestEnemy.name,
-          targetId: nearestEnemy.id,
-          damage,
-          remainingHp: Math.max(0, nearestEnemy.stats.hp)
+          target: nearestEnemy.name, targetId: nearestEnemy.id,
+          damage: actualDamage, remainingHp: Math.max(0, nearestEnemy.stats.hp)
         }
       });
 
-      // Check for death
       if (nearestEnemy.stats.hp <= 0) {
         nearestEnemy.isAlive = false;
         this.clearOccupancy(nearestEnemy.position);
-
-        // Add death event
         this.events.push({
           type: BattleEventType.Death,
           tick: this.currentTick,
-          data: {
-            unit: nearestEnemy.name,
-            unitId: nearestEnemy.id
-          }
+          data: { unit: nearestEnemy.name, unitId: nearestEnemy.id }
         });
       }
     }
@@ -533,39 +549,70 @@ export class DeterministicBattleSimulatorV2 {
 
   /**
    * Find a usable ability for the unit
+   * Priority: heal critical ally > offensive ability > buff/support
    */
   private findUsableAbility(unit: SimulatedUnit, mainTarget: SimulatedUnit, enemies: SimulatedUnit[], allies: SimulatedUnit[]):
     { ability: Ability, targets: SimulatedUnit[] } | null {
 
-    // Check each ability
+    let bestOffensive: { ability: Ability, targets: SimulatedUnit[] } | null = null;
+    let bestSupport: { ability: Ability, targets: SimulatedUnit[] } | null = null;
+
+    // Check for critically low HP allies (below 40%)
+    const criticalAlly = allies
+      .filter(a => a.isAlive && a.stats.hp / a.stats.maxHp < 0.4)
+      .sort((a, b) => a.stats.hp / a.stats.maxHp - b.stats.hp / b.stats.maxHp)[0];
+
     for (const ability of unit.abilities) {
-      // Skip if on cooldown
       const cooldown = unit.abilityCooldowns.get(ability.id) || 0;
       if (cooldown > 0) continue;
 
-      // Check range
-      const range = ability.range || 1;
-      const distance = this.getDistance(unit.position, mainTarget.position);
-      if (distance > range) continue;
-
-      // For simplicity, only use offensive abilities on enemies
+      const hasHealEffect = ability.effects.some(e => e.type === 'heal' || e.type === 'revive');
       const hasOffensiveEffect = ability.effects.some(e =>
-        e.type === 'damage' || e.type === 'debuff' || e.type === 'status'
+        e.type === 'damage' || e.type === 'debuff' || e.type === 'status' ||
+        e.type === 'execute' || e.type === 'lifesteal'
+      );
+      const hasBuffEffect = ability.effects.some(e =>
+        e.type === 'buff' || e.type === 'shield'
       );
 
+      // Heal abilities: prioritize when ally is critical
+      if (hasHealEffect && criticalAlly) {
+        return { ability, targets: [criticalAlly] };
+      }
+
+      // Offensive abilities: check range to main target
       if (hasOffensiveEffect) {
-        return { ability, targets: [mainTarget] };
+        const range = ability.range || 1;
+        const distance = this.getDistance(unit.position, mainTarget.position);
+        if (distance <= range && !bestOffensive) {
+          bestOffensive = { ability, targets: [mainTarget] };
+        }
+      }
+
+      // Support abilities: use if no ally already has this buff
+      if (hasBuffEffect && !bestSupport) {
+        const alreadyBuffed = allies.some(a =>
+          a.statusEffects.some(e => e.source === unit.id && e.type === 'buff' && e.remainingDuration > 0)
+        );
+        if (!alreadyBuffed) {
+          bestSupport = { ability, targets: allies.filter(a => a.isAlive) };
+        }
       }
     }
 
-    return null;
+    return bestOffensive || bestSupport || null;
   }
 
   /**
-   * Use an ability
+   * Use an ability - handles all effect types
    */
-  private useAbility(caster: SimulatedUnit, ability: Ability, targets: SimulatedUnit[]) {
-    // Add ability used event
+  private useAbility(
+    caster: SimulatedUnit,
+    ability: Ability,
+    targets: SimulatedUnit[],
+    allEnemies: SimulatedUnit[] = [],
+    allAllies: SimulatedUnit[] = []
+  ) {
     this.events.push({
       type: BattleEventType.AbilityUsed,
       tick: this.currentTick,
@@ -577,90 +624,258 @@ export class DeterministicBattleSimulatorV2 {
       }
     });
 
-    // Process ability effects
-    let totalDamageDealt = 0; // Track total damage for lifesteal
+    let totalDamageDealt = 0;
+    const mainTarget = targets[0] || null;
+
+    // Determine which group is enemies/allies from caster perspective
+    const enemiesOfCaster = caster.isHero
+      ? this.getAliveUnits().filter(u => !u.isHero)
+      : this.getAliveUnits().filter(u => u.isHero);
+    const alliesOfCaster = this.getAliveUnits().filter(u => u.isHero === caster.isHero && u.id !== caster.id);
 
     for (const effect of ability.effects) {
-      // Determine actual targets based on effect targetType
-      const actualTargets = effect.targetType === 'self' ? [caster] : targets;
+      // Resolve targets based on effect targetType
+      const actualTargets = this.resolveTargets(caster, effect, mainTarget, alliesOfCaster, enemiesOfCaster);
 
       for (const target of actualTargets) {
-        if (effect.type === 'damage' && effect.value) {
-          // Apply defense reduction to ability damage similar to basic attacks
-          const rawDamage = effect.value;
-          const damage = Math.max(1, rawDamage - Math.floor(target.stats.defense * 0.3));
+        if (!target.isAlive && effect.type !== 'revive') continue;
 
-          target.stats.hp -= damage;
-          totalDamageDealt += damage; // Track for lifesteal
+        switch (effect.type) {
+          case 'damage': {
+            if (!effect.value) break;
+            const rawDamage = effect.value;
+            const damage = Math.max(1, rawDamage - Math.floor(target.stats.defense * 0.3));
+            // Splash targets take 50% damage
+            const isSplash = effect.targetType === 'splash' && target.id !== mainTarget?.id;
+            const finalRaw = isSplash ? Math.floor(damage * 0.5) : damage;
+            const finalDamage = this.applyShieldAbsorption(target, finalRaw);
 
-          // Add damage event
-          this.events.push({
-            type: BattleEventType.Damage,
-            tick: this.currentTick,
-            data: {
-              target: target.name,
-              targetId: target.id,
-              damage,
-              remainingHp: Math.max(0, target.stats.hp),
-              source: 'ability',
-              abilityName: ability.name
+            target.stats.hp -= finalDamage;
+            totalDamageDealt += finalDamage;
+
+            this.events.push({
+              type: BattleEventType.Damage,
+              tick: this.currentTick,
+              data: {
+                target: target.name, targetId: target.id,
+                damage: finalDamage, remainingHp: Math.max(0, target.stats.hp),
+                source: 'ability', abilityName: ability.name
+              }
+            });
+
+            if (target.stats.hp <= 0) {
+              target.isAlive = false;
+              this.clearOccupancy(target.position);
+              this.events.push({
+                type: BattleEventType.Death,
+                tick: this.currentTick,
+                data: { unit: target.name, unitId: target.id, cause: ability.name }
+              });
             }
-          });
+            break;
+          }
 
-          // Check for death
-          if (target.stats.hp <= 0) {
-            target.isAlive = false;
-            this.clearOccupancy(target.position);
+          case 'heal': {
+            if (!effect.value) break;
+            const healing = Math.min(effect.value, target.stats.maxHp - target.stats.hp);
+            if (healing > 0) {
+              target.stats.hp += healing;
+              this.events.push({
+                type: BattleEventType.Heal,
+                tick: this.currentTick,
+                data: { unit: target.name, unitId: target.id, amount: healing, source: ability.name }
+              });
+            }
+            break;
+          }
+
+          case 'lifesteal': {
+            if (!effect.value || totalDamageDealt <= 0) break;
+            const healAmount = Math.floor(totalDamageDealt * effect.value);
+            const actualHeal = Math.min(healAmount, caster.stats.maxHp - caster.stats.hp);
+            if (actualHeal > 0) {
+              caster.stats.hp += actualHeal;
+              this.events.push({
+                type: BattleEventType.Heal,
+                tick: this.currentTick,
+                data: { unit: caster.name, unitId: caster.id, amount: actualHeal, source: `${ability.name} (lifesteal)` }
+              });
+            }
+            break;
+          }
+
+          case 'buff': {
+            const status = this.createStatusEffect(effect, caster.id, ability.name);
+            status.type = 'buff';
+            this.applyStatusEffect(target, status);
+            this.events.push({
+              type: BattleEventType.StatusApplied,
+              tick: this.currentTick,
+              data: { unitId: target.id, statusType: status.statusType, name: status.name, duration: status.duration, source: caster.id }
+            });
+            break;
+          }
+
+          case 'debuff': {
+            const status = this.createStatusEffect(effect, caster.id, ability.name);
+            status.type = 'debuff';
+            this.applyStatusEffect(target, status);
+            this.events.push({
+              type: BattleEventType.StatusApplied,
+              tick: this.currentTick,
+              data: { unitId: target.id, statusType: status.statusType, name: status.name, duration: status.duration, source: caster.id }
+            });
+            break;
+          }
+
+          case 'shield': {
+            const shieldAmount = effect.value || 50;
+            const status: StatusEffect = {
+              id: `shield_${caster.id}_${Date.now()}`,
+              name: 'Shield',
+              type: 'buff',
+              statusType: StatusEffectType.Shield,
+              duration: effect.duration || 5,
+              remainingDuration: effect.duration || 5,
+              shieldAmount,
+              source: caster.id,
+            };
+            this.applyStatusEffect(target, status);
+            this.events.push({
+              type: BattleEventType.StatusApplied,
+              tick: this.currentTick,
+              data: { unitId: target.id, statusType: 'shield', name: 'Shield', shieldAmount, source: caster.id }
+            });
+            break;
+          }
+
+          case 'status': {
+            const status = this.createStatusEffect(effect, caster.id, ability.name);
+            this.applyStatusEffect(target, status);
+            this.events.push({
+              type: BattleEventType.StatusApplied,
+              tick: this.currentTick,
+              data: { unitId: target.id, statusType: status.statusType, name: status.name, duration: status.duration, source: caster.id }
+            });
+            break;
+          }
+
+          case 'execute': {
+            if (!effect.value) break;
+            const hpPercent = target.stats.hp / target.stats.maxHp;
+            const threshold = (effect.conditionValue || 30) / 100;
+            const multiplier = hpPercent < threshold ? (effect.damageMultiplier || 3) : 1;
+            const rawDamage = Math.floor(effect.value * multiplier);
+            const damage = Math.max(1, rawDamage - Math.floor(target.stats.defense * 0.3));
+            const finalDamage = this.applyShieldAbsorption(target, damage);
+
+            target.stats.hp -= finalDamage;
+            totalDamageDealt += finalDamage;
 
             this.events.push({
-              type: BattleEventType.Death,
+              type: BattleEventType.Damage,
               tick: this.currentTick,
               data: {
-                unit: target.name,
-                unitId: target.id,
-                cause: ability.name
+                target: target.name, targetId: target.id,
+                damage: finalDamage, remainingHp: Math.max(0, target.stats.hp),
+                source: 'ability', abilityName: ability.name,
+                isExecute: hpPercent < threshold
               }
             });
+
+            if (target.stats.hp <= 0) {
+              target.isAlive = false;
+              this.clearOccupancy(target.position);
+              this.events.push({
+                type: BattleEventType.Death,
+                tick: this.currentTick,
+                data: { unit: target.name, unitId: target.id, cause: ability.name }
+              });
+            }
+            break;
           }
-        } else if (effect.type === 'heal' && effect.value) {
-          const healing = Math.min(effect.value, target.stats.maxHp - target.stats.hp);
-          if (healing > 0) {
-            target.stats.hp += healing;
+
+          case 'revive': {
+            // Find a dead ally to revive
+            const deadAllies = this.getUnitsForSide(caster.isHero).filter(a => !a.isAlive);
+            if (deadAllies.length === 0) break;
+
+            const reviveTarget = deadAllies[0];
+            const reviveHpPercent = (effect.value || 50) / 100;
+            reviveTarget.stats.hp = Math.floor(reviveTarget.stats.maxHp * reviveHpPercent);
+            reviveTarget.isAlive = true;
+
+            // Find an open position near caster
+            const adjPositions = this.getAdjacentPositions(caster.position);
+            const openPos = adjPositions.find(p => !this.isOccupied(p));
+            if (openPos) {
+              reviveTarget.position = openPos;
+              this.setOccupancy(openPos, reviveTarget.id);
+            }
 
             this.events.push({
               type: BattleEventType.Heal,
               tick: this.currentTick,
               data: {
-                unit: target.name,
-                unitId: target.id,
-                amount: healing,
-                source: ability.name
+                unit: reviveTarget.name, unitId: reviveTarget.id,
+                amount: reviveTarget.stats.hp, source: `${ability.name} (revive)`
               }
             });
+            break;
           }
-        } else if (effect.type === 'lifesteal' && effect.value && totalDamageDealt > 0) {
-          // Lifesteal healing for the caster based on actual damage dealt
-          const healAmount = Math.floor(totalDamageDealt * effect.value);
-          const actualHeal = Math.min(healAmount, caster.stats.maxHp - caster.stats.hp);
 
-          if (actualHeal > 0) {
-            caster.stats.hp += actualHeal;
+          case 'summon': {
+            // Summon is complex - for now emit the event and the animation plays
+            // Full summon logic would create new units, which is beyond this phase
+            break;
+          }
+
+          case 'conditional': {
+            if (!effect.value) break;
+            // Check condition
+            let conditionMet = false;
+            if (effect.condition === 'target_below_hp_percent') {
+              conditionMet = (target.stats.hp / target.stats.maxHp) < ((effect.conditionValue || 50) / 100);
+            } else if (effect.condition === 'target_has_debuff') {
+              conditionMet = target.statusEffects.some(e => e.type === 'debuff' && e.remainingDuration > 0);
+            } else if (effect.condition === 'self_below_hp_percent') {
+              conditionMet = (caster.stats.hp / caster.stats.maxHp) < ((effect.conditionValue || 50) / 100);
+            }
+
+            const multiplier = conditionMet ? (effect.damageMultiplier || 2) : 1;
+            const rawDamage = Math.floor(effect.value * multiplier);
+            const damage = Math.max(1, rawDamage - Math.floor(target.stats.defense * 0.3));
+            const finalDamage = this.applyShieldAbsorption(target, damage);
+
+            target.stats.hp -= finalDamage;
+            totalDamageDealt += finalDamage;
+
             this.events.push({
-              type: BattleEventType.Heal,
+              type: BattleEventType.Damage,
               tick: this.currentTick,
               data: {
-                unit: caster.name,
-                unitId: caster.id,
-                amount: actualHeal,
-                source: `${ability.name} (lifesteal)`
+                target: target.name, targetId: target.id,
+                damage: finalDamage, remainingHp: Math.max(0, target.stats.hp),
+                source: 'ability', abilityName: ability.name
               }
             });
+
+            if (target.stats.hp <= 0) {
+              target.isAlive = false;
+              this.clearOccupancy(target.position);
+              this.events.push({
+                type: BattleEventType.Death,
+                tick: this.currentTick,
+                data: { unit: target.name, unitId: target.id, cause: ability.name }
+              });
+            }
+            break;
           }
         }
       }
     }
 
-    // Update cooldowns for all abilities (they tick down over time)
+    // Tick down all ability cooldowns
     for (const [abilityId, cd] of caster.abilityCooldowns) {
       if (cd > 0) {
         caster.abilityCooldowns.set(abilityId, cd - 1);
@@ -747,6 +962,312 @@ export class DeterministicBattleSimulatorV2 {
     });
   }
 
+  // ============= Target Resolution =============
+
+  /**
+   * Resolve targets for an ability effect based on its targetType
+   */
+  private resolveTargets(
+    caster: SimulatedUnit,
+    effect: AbilityEffect,
+    mainTarget: SimulatedUnit | null,
+    allies: SimulatedUnit[],
+    enemies: SimulatedUnit[]
+  ): SimulatedUnit[] {
+    switch (effect.targetType) {
+      case 'self':
+        return [caster];
+
+      case 'enemy':
+        return mainTarget ? [mainTarget] : [];
+
+      case 'ally': {
+        // Find lowest-HP living ally
+        const aliveAllies = allies.filter(a => a.isAlive);
+        if (aliveAllies.length === 0) return [];
+        return [aliveAllies.reduce((lowest, current) =>
+          (current.stats.hp / current.stats.maxHp) < (lowest.stats.hp / lowest.stats.maxHp) ? current : lowest
+        )];
+      }
+
+      case 'allAllies':
+        return [caster, ...allies.filter(a => a.isAlive)];
+
+      case 'allEnemies':
+        return enemies.filter(e => e.isAlive);
+
+      case 'aoe': {
+        if (!mainTarget) return [];
+        const radius = effect.radius || 1;
+        return enemies.filter(e => e.isAlive &&
+          this.getDistance(e.position, mainTarget.position) <= radius
+        );
+      }
+
+      case 'splash': {
+        if (!mainTarget) return [];
+        const radius = effect.radius || 1;
+        // Primary target gets full damage, others in radius get hit too
+        const splashTargets = enemies.filter(e =>
+          e.isAlive && e.id !== mainTarget.id &&
+          this.getDistance(e.position, mainTarget.position) <= radius
+        );
+        return [mainTarget, ...splashTargets];
+      }
+
+      case 'line': {
+        if (!mainTarget) return [];
+        // All units on the line between caster and mainTarget (same row ±1)
+        const minCol = Math.min(caster.position.col, mainTarget.position.col);
+        const maxCol = Math.max(caster.position.col, mainTarget.position.col);
+        return enemies.filter(e =>
+          e.isAlive &&
+          Math.abs(e.position.row - caster.position.row) <= 1 &&
+          e.position.col >= minCol && e.position.col <= maxCol
+        );
+      }
+
+      case 'cone': {
+        if (!mainTarget) return [];
+        // 3-wide cone from caster toward target
+        const dir = mainTarget.position.col > caster.position.col ? 1 : -1;
+        return enemies.filter(e => {
+          if (!e.isAlive) return false;
+          const colDist = (e.position.col - caster.position.col) * dir;
+          const rowDist = Math.abs(e.position.row - caster.position.row);
+          return colDist > 0 && colDist <= 3 && rowDist <= Math.ceil(colDist / 2);
+        });
+      }
+
+      default:
+        return mainTarget ? [mainTarget] : [];
+    }
+  }
+
+  /**
+   * Calculate the range of a unit based on its abilities
+   */
+  private getUnitRange(unit: SimulatedUnit): number {
+    let maxRange = 1;
+    for (const ability of unit.abilities) {
+      if (ability.range && ability.range > maxRange) {
+        maxRange = ability.range;
+      }
+    }
+    return maxRange;
+  }
+
+  // ============= Status Effect Processing =============
+
+  /**
+   * Create a StatusEffect from an ability effect
+   */
+  private createStatusEffect(
+    effect: AbilityEffect,
+    sourceId: string,
+    sourceName: string
+  ): StatusEffect {
+    const statusType = effect.statusType || StatusEffectType.Weakened;
+    const duration = effect.duration || 3;
+
+    // Determine effect category
+    let type: 'buff' | 'debuff' | 'control' | 'dot' | 'special' = 'debuff';
+    const controlTypes: StatusEffectType[] = [
+      StatusEffectType.Stun, StatusEffectType.Root, StatusEffectType.Silence,
+      StatusEffectType.Fear, StatusEffectType.Sleep, StatusEffectType.Charm,
+      StatusEffectType.Disarm
+    ];
+    const dotTypes: StatusEffectType[] = [
+      StatusEffectType.Burn, StatusEffectType.Poison, StatusEffectType.Bleed
+    ];
+    const buffTypes: StatusEffectType[] = [
+      StatusEffectType.Shield, StatusEffectType.Regeneration, StatusEffectType.Enrage,
+      StatusEffectType.Frenzy, StatusEffectType.Fortify, StatusEffectType.Haste,
+      StatusEffectType.Invisibility, StatusEffectType.Incorporeal
+    ];
+
+    if (controlTypes.includes(statusType)) type = 'control';
+    else if (dotTypes.includes(statusType)) type = 'dot';
+    else if (buffTypes.includes(statusType)) type = 'buff';
+
+    return {
+      id: `${statusType}_${sourceId}_${Date.now()}`,
+      name: statusType.replace(/_/g, ' '),
+      type,
+      statusType,
+      stat: effect.statModifier?.stat,
+      value: effect.statModifier?.value || effect.value,
+      isPercent: effect.statModifier?.isPercent,
+      duration,
+      remainingDuration: duration,
+      damagePerTick: dotTypes.includes(statusType) ? (effect.value || 0) : undefined,
+      shieldAmount: statusType === StatusEffectType.Shield ? (effect.value || 0) : undefined,
+      source: sourceId,
+    };
+  }
+
+  /**
+   * Apply a status effect to a unit and recalculate stats
+   */
+  private applyStatusEffect(unit: SimulatedUnit, status: StatusEffect) {
+    unit.statusEffects.push(status);
+    this.recalculateStats(unit);
+  }
+
+  /**
+   * Recalculate a unit's stats from baseStats + active status effects
+   */
+  private recalculateStats(unit: SimulatedUnit) {
+    const hp = unit.stats.hp; // Preserve current HP
+    unit.stats = { ...unit.baseStats };
+    unit.stats.hp = hp; // Restore current HP
+
+    for (const effect of unit.statusEffects) {
+      if (effect.remainingDuration <= 0) continue;
+      if (effect.stat && effect.value !== undefined) {
+        const stat = effect.stat as keyof typeof unit.stats;
+        if (stat in unit.stats && stat !== 'hp' && stat !== 'maxHp') {
+          if (effect.isPercent) {
+            (unit.stats as any)[stat] = Math.floor((unit.stats as any)[stat] * (1 + effect.value / 100));
+          } else {
+            (unit.stats as any)[stat] += effect.value;
+          }
+        }
+      }
+    }
+
+    // Update cooldownRate based on current speed
+    unit.cooldownRate = unit.stats.speed / COOLDOWN_DIVISOR;
+  }
+
+  /**
+   * Process status effects for a unit (DoTs, regen, expiry)
+   */
+  private processStatusEffects(unit: SimulatedUnit): void {
+    const expiredEffects: StatusEffect[] = [];
+
+    for (const effect of unit.statusEffects) {
+      // DoT damage (Burn, Poison, Bleed)
+      if (effect.damagePerTick && effect.damagePerTick > 0) {
+        unit.stats.hp -= effect.damagePerTick;
+        this.events.push({
+          type: BattleEventType.Damage,
+          tick: this.currentTick,
+          data: {
+            target: unit.name,
+            targetId: unit.id,
+            damage: effect.damagePerTick,
+            remainingHp: Math.max(0, unit.stats.hp),
+            source: effect.name,
+          }
+        });
+
+        if (unit.stats.hp <= 0) {
+          unit.isAlive = false;
+          this.clearOccupancy(unit.position);
+          this.events.push({
+            type: BattleEventType.Death,
+            tick: this.currentTick,
+            data: { unit: unit.name, unitId: unit.id, cause: effect.name }
+          });
+          return; // Dead, no more processing
+        }
+      }
+
+      // Regeneration
+      if (effect.statusType === StatusEffectType.Regeneration && effect.value) {
+        const healing = Math.min(effect.value, unit.stats.maxHp - unit.stats.hp);
+        if (healing > 0) {
+          unit.stats.hp += healing;
+          this.events.push({
+            type: BattleEventType.Heal,
+            tick: this.currentTick,
+            data: {
+              unit: unit.name, unitId: unit.id,
+              amount: healing, source: 'Regeneration'
+            }
+          });
+        }
+      }
+
+      // Decrement duration
+      effect.remainingDuration--;
+      if (effect.remainingDuration <= 0) {
+        expiredEffects.push(effect);
+      }
+    }
+
+    // Remove expired effects
+    if (expiredEffects.length > 0) {
+      unit.statusEffects = unit.statusEffects.filter(e => e.remainingDuration > 0);
+      this.recalculateStats(unit);
+      for (const expired of expiredEffects) {
+        this.events.push({
+          type: BattleEventType.StatusExpired,
+          tick: this.currentTick,
+          data: { unitId: unit.id, statusType: expired.statusType, name: expired.name }
+        });
+      }
+    }
+  }
+
+  /**
+   * Check if a unit is crowd-controlled (cannot act)
+   */
+  private isControlled(unit: SimulatedUnit): boolean {
+    return unit.statusEffects.some(e =>
+      e.remainingDuration > 0 && (
+        e.statusType === StatusEffectType.Stun ||
+        e.statusType === StatusEffectType.Fear ||
+        e.statusType === StatusEffectType.Sleep ||
+        e.statusType === StatusEffectType.Charm
+      )
+    );
+  }
+
+  /**
+   * Check if a unit is rooted (can act but not move)
+   */
+  private isRooted(unit: SimulatedUnit): boolean {
+    return unit.statusEffects.some(e =>
+      e.remainingDuration > 0 && (
+        e.statusType === StatusEffectType.Root ||
+        e.statusType === StatusEffectType.Entangle
+      )
+    );
+  }
+
+  /**
+   * Check if a unit is silenced (can't use abilities)
+   */
+  private isSilenced(unit: SimulatedUnit): boolean {
+    return unit.statusEffects.some(e =>
+      e.remainingDuration > 0 && e.statusType === StatusEffectType.Silence
+    );
+  }
+
+  /**
+   * Apply shield absorption before HP damage. Returns remaining damage after shields.
+   */
+  private applyShieldAbsorption(target: SimulatedUnit, damage: number): number {
+    const shieldEffects = target.statusEffects.filter(
+      e => e.statusType === StatusEffectType.Shield && e.shieldAmount && e.shieldAmount > 0
+    );
+
+    let remaining = damage;
+    for (const shield of shieldEffects) {
+      if (remaining <= 0) break;
+      const absorbed = Math.min(shield.shieldAmount!, remaining);
+      shield.shieldAmount! -= absorbed;
+      remaining -= absorbed;
+      if (shield.shieldAmount! <= 0) {
+        shield.remainingDuration = 0; // Expire broken shield
+      }
+    }
+
+    return remaining;
+  }
+
   // ============= Helper Methods =============
 
   private getHeroStartPosition(index: number): Position {
@@ -800,6 +1321,10 @@ export class DeterministicBattleSimulatorV2 {
     return Array.from(this.units.values()).filter(u => u.isAlive);
   }
 
+  private getUnitsForSide(isHero: boolean): SimulatedUnit[] {
+    return Array.from(this.units.values()).filter(u => u.isHero === isHero);
+  }
+
   private getAliveHeroes(): SimulatedUnit[] {
     return Array.from(this.units.values()).filter(u => u.isAlive && u.isHero);
   }
@@ -847,17 +1372,17 @@ export class DeterministicBattleSimulatorV2 {
 
     return {
       id: unit.id,
-      instanceId: unit.id, // BattleUnit doesn't have instanceId, just id
+      instanceId: unit.id,
       name: unit.name,
       class: unit.class,
       spritePath: unit.spritePath,
       position,
-      baseStats: { ...unit.stats }, // Base stats
-      stats: { ...unit.stats }, // Current stats (same as base for now)
-      statusEffects: [], // No status effects implemented yet
+      baseStats: { ...unit.baseStats },
+      stats: { ...unit.stats },
+      statusEffects: [...unit.statusEffects],
       isHero: unit.isHero,
       isAlive: unit.isAlive,
-      range: 1, // Default melee range, could be calculated from abilities
+      range: this.getUnitRange(unit),
       cooldown: unit.cooldown,
       cooldownRate: unit.cooldownRate,
       abilities: unit.abilities,

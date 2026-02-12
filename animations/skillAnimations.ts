@@ -990,3 +990,842 @@ function createBuffSparkles(
     }, i * 100);
   }
 }
+
+// ================= Phase 3 Animation Functions =================
+
+/**
+ * Beam Animation
+ * Duration: ~0.8s
+ * Effect: Glowing beam from caster to target that pulses
+ */
+export function animateBeam(
+  casterElement: HTMLElement,
+  targetElement: HTMLElement,
+  casterPosition: GridPosition,
+  targetPosition: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  beamColor: string = '#FFD700'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const casterPixelPos = calculatePixelPosition(casterPosition, cellSize);
+  const targetPixelPos = calculatePixelPosition(targetPosition, cellSize);
+
+  const startX = casterPixelPos.x + cellSize / 2;
+  const startY = casterPixelPos.y + cellSize / 2;
+  const endX = targetPixelPos.x + cellSize / 2;
+  const endY = targetPixelPos.y + cellSize / 2;
+
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  const length = Math.sqrt(dx * dx + dy * dy);
+
+  // Create beam element
+  const beam = document.createElement('div');
+  beam.style.position = 'absolute';
+  beam.style.width = `${length}px`;
+  beam.style.height = '6px';
+  beam.style.left = `${startX}px`;
+  beam.style.top = `${startY}px`;
+  beam.style.transformOrigin = 'left center';
+  beam.style.transform = `rotate(${angle}deg)`;
+  beam.style.background = `linear-gradient(90deg, ${beamColor}, #FFF, ${beamColor})`;
+  beam.style.boxShadow = `0 0 10px ${beamColor}, 0 0 20px ${beamColor}`;
+  beam.style.borderRadius = '3px';
+  beam.style.pointerEvents = 'none';
+  beam.style.zIndex = '1500';
+  beam.style.opacity = '0';
+
+  containerElement.appendChild(beam);
+
+  // Beam appears
+  tl.to(beam, {
+    opacity: 1,
+    duration: 0.15,
+    ease: 'power2.out',
+  });
+
+  // Pulse 3 times (scale oscillation on y-axis)
+  tl.to(beam, {
+    scaleY: 2.5,
+    duration: 0.1,
+    ease: 'power2.out',
+    yoyo: true,
+    repeat: 5,
+  });
+
+  // Fade out
+  tl.to(beam, {
+    opacity: 0,
+    scaleY: 0.5,
+    duration: 0.2,
+    ease: 'power2.in',
+    onComplete: () => beam.remove(),
+  });
+
+  // Impact flash at target
+  tl.add(() => {
+    createBeamImpact(
+      { x: endX, y: endY },
+      containerElement,
+      beamColor
+    );
+  }, 0.15);
+
+  return tl;
+}
+
+// Helper: Create beam impact flash
+function createBeamImpact(
+  position: { x: number; y: number },
+  containerElement: HTMLElement,
+  color: string
+): void {
+  const flash = document.createElement('div');
+  flash.style.position = 'absolute';
+  flash.style.left = `${position.x}px`;
+  flash.style.top = `${position.y}px`;
+  flash.style.width = '24px';
+  flash.style.height = '24px';
+  flash.style.transform = 'translate(-50%, -50%)';
+  flash.style.borderRadius = '50%';
+  flash.style.background = `radial-gradient(circle, #FFF 0%, ${color} 50%, transparent 70%)`;
+  flash.style.boxShadow = `0 0 15px ${color}`;
+  flash.style.pointerEvents = 'none';
+  flash.style.zIndex = '1600';
+
+  containerElement.appendChild(flash);
+
+  gsap.fromTo(
+    flash,
+    { scale: 0.3, opacity: 1 },
+    {
+      scale: 1.5,
+      opacity: 0,
+      duration: 0.4,
+      ease: 'power2.out',
+      onComplete: () => flash.remove(),
+    }
+  );
+}
+
+/**
+ * Chain Animation
+ * Duration: scales with number of targets
+ * Effect: Projectile bouncing between multiple targets with sparks
+ */
+export function animateChain(
+  casterElement: HTMLElement,
+  targetPositions: GridPosition[],
+  casterPosition: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  chainColor: string = '#9370DB'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  if (targetPositions.length === 0) return tl;
+
+  const casterPixelPos = calculatePixelPosition(casterPosition, cellSize);
+  const startX = casterPixelPos.x + cellSize / 2;
+  const startY = casterPixelPos.y + cellSize / 2;
+
+  // Create glowing circle projectile
+  const projectile = document.createElement('div');
+  projectile.style.position = 'absolute';
+  projectile.style.width = '14px';
+  projectile.style.height = '14px';
+  projectile.style.left = `${startX}px`;
+  projectile.style.top = `${startY}px`;
+  projectile.style.transform = 'translate(-50%, -50%)';
+  projectile.style.borderRadius = '50%';
+  projectile.style.background = `radial-gradient(circle, #FFF 0%, ${chainColor} 60%, transparent 100%)`;
+  projectile.style.boxShadow = `0 0 10px ${chainColor}, 0 0 20px ${chainColor}`;
+  projectile.style.pointerEvents = 'none';
+  projectile.style.zIndex = '1500';
+
+  containerElement.appendChild(projectile);
+
+  // Animate to each target sequentially
+  let prevX = startX;
+  let prevY = startY;
+
+  targetPositions.forEach((targetPos, index) => {
+    const targetPixelPos = calculatePixelPosition(targetPos, cellSize);
+    const targetX = targetPixelPos.x + cellSize / 2;
+    const targetY = targetPixelPos.y + cellSize / 2;
+
+    // Create connecting sparks along the path
+    tl.add(() => {
+      createChainSparks(
+        { x: prevX, y: prevY },
+        { x: targetX, y: targetY },
+        containerElement,
+        chainColor
+      );
+    });
+
+    // Move projectile to next target
+    tl.to(projectile, {
+      left: `${targetX}px`,
+      top: `${targetY}px`,
+      duration: 0.15,
+      ease: 'power2.inOut',
+    });
+
+    // Create impact flash at target
+    tl.add(() => {
+      createChainImpact(
+        { x: targetX, y: targetY },
+        containerElement,
+        chainColor
+      );
+      prevX = targetX;
+      prevY = targetY;
+    });
+  });
+
+  // Remove projectile at the end
+  tl.add(() => {
+    projectile.remove();
+  });
+
+  return tl;
+}
+
+// Helper: Create sparks along chain path
+function createChainSparks(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  containerElement: HTMLElement,
+  color: string
+): void {
+  const sparkCount = 3;
+  for (let i = 0; i < sparkCount; i++) {
+    const t = (i + 1) / (sparkCount + 1);
+    const sparkX = from.x + (to.x - from.x) * t;
+    const sparkY = from.y + (to.y - from.y) * t;
+
+    const spark = document.createElement('div');
+    spark.style.position = 'absolute';
+    spark.style.left = `${sparkX}px`;
+    spark.style.top = `${sparkY}px`;
+    spark.style.width = '4px';
+    spark.style.height = '4px';
+    spark.style.transform = 'translate(-50%, -50%)';
+    spark.style.borderRadius = '50%';
+    spark.style.backgroundColor = color;
+    spark.style.boxShadow = `0 0 4px ${color}`;
+    spark.style.pointerEvents = 'none';
+    spark.style.zIndex = '1500';
+
+    containerElement.appendChild(spark);
+
+    gsap.fromTo(
+      spark,
+      { opacity: 1, scale: 1 },
+      {
+        opacity: 0,
+        scale: 0.3,
+        y: -8 + Math.random() * 16,
+        x: -8 + Math.random() * 16,
+        duration: 0.3,
+        delay: i * 0.03,
+        ease: 'power2.out',
+        onComplete: () => spark.remove(),
+      }
+    );
+  }
+}
+
+// Helper: Create chain impact flash
+function createChainImpact(
+  position: { x: number; y: number },
+  containerElement: HTMLElement,
+  color: string
+): void {
+  const flash = document.createElement('div');
+  flash.style.position = 'absolute';
+  flash.style.left = `${position.x}px`;
+  flash.style.top = `${position.y}px`;
+  flash.style.width = '20px';
+  flash.style.height = '20px';
+  flash.style.transform = 'translate(-50%, -50%)';
+  flash.style.borderRadius = '50%';
+  flash.style.background = `radial-gradient(circle, #FFF 0%, ${color} 40%, transparent 70%)`;
+  flash.style.pointerEvents = 'none';
+  flash.style.zIndex = '1600';
+
+  containerElement.appendChild(flash);
+
+  gsap.fromTo(
+    flash,
+    { scale: 0.3, opacity: 1 },
+    {
+      scale: 1.2,
+      opacity: 0,
+      duration: 0.25,
+      ease: 'power2.out',
+      onComplete: () => flash.remove(),
+    }
+  );
+
+  // Small particles
+  for (let i = 0; i < 4; i++) {
+    const particle = document.createElement('div');
+    particle.style.position = 'absolute';
+    particle.style.left = `${position.x}px`;
+    particle.style.top = `${position.y}px`;
+    particle.style.width = '3px';
+    particle.style.height = '3px';
+    particle.style.borderRadius = '50%';
+    particle.style.backgroundColor = color;
+    particle.style.pointerEvents = 'none';
+    particle.style.zIndex = '1600';
+
+    containerElement.appendChild(particle);
+
+    const angle = (Math.PI * 2 * i) / 4;
+    const distance = 8 + Math.random() * 8;
+
+    gsap.to(particle, {
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance,
+      opacity: 0,
+      duration: 0.2,
+      ease: 'power2.out',
+      onComplete: () => particle.remove(),
+    });
+  }
+}
+
+/**
+ * Shield Animation
+ * Duration: ~0.8s
+ * Effect: Protective dome expanding around target
+ */
+export function animateShield(
+  targetElement: HTMLElement,
+  targetPosition: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  shieldColor: string = '#FFD700'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const targetPixelPos = calculatePixelPosition(targetPosition, cellSize);
+  const centerX = targetPixelPos.x + cellSize / 2;
+  const centerY = targetPixelPos.y + cellSize / 2;
+  const shieldSize = cellSize * 1.2;
+
+  // Create shield dome
+  const shield = document.createElement('div');
+  shield.style.position = 'absolute';
+  shield.style.width = `${shieldSize}px`;
+  shield.style.height = `${shieldSize}px`;
+  shield.style.left = `${centerX}px`;
+  shield.style.top = `${centerY}px`;
+  shield.style.transform = 'translate(-50%, -50%)';
+  shield.style.borderRadius = '50%';
+  shield.style.border = `3px solid ${shieldColor}`;
+  shield.style.background = `radial-gradient(circle, ${shieldColor}33 0%, ${shieldColor}11 60%, transparent 100%)`;
+  shield.style.boxShadow = `0 0 15px ${shieldColor}66, inset 0 0 15px ${shieldColor}33`;
+  shield.style.pointerEvents = 'none';
+  shield.style.zIndex = '1500';
+
+  containerElement.appendChild(shield);
+  gsap.set(shield, { scale: 0, opacity: 0 });
+
+  // Expand from scale 0 to 1
+  tl.to(shield, {
+    scale: 1,
+    opacity: 1,
+    duration: 0.2,
+    ease: 'back.out(1.5)',
+  });
+
+  // Gentle pulse (scale 1 -> 1.05 -> 1, yoyo repeat 2)
+  tl.to(shield, {
+    scale: 1.05,
+    duration: 0.15,
+    ease: 'sine.inOut',
+    yoyo: true,
+    repeat: 3,
+  });
+
+  // Fade out
+  tl.to(shield, {
+    opacity: 0,
+    scale: 1.15,
+    duration: 0.2,
+    ease: 'power2.in',
+    onComplete: () => shield.remove(),
+  });
+
+  return tl;
+}
+
+/**
+ * AoE Blast Animation
+ * Duration: ~0.6s
+ * Effect: Expanding ring explosion with screen shake
+ */
+export function animateAoeBlast(
+  centerPosition: GridPosition,
+  radius: number,
+  cellSize: number,
+  containerElement: HTMLElement,
+  blastColor: string = '#FF4500'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const centerPixelPos = calculatePixelPosition(centerPosition, cellSize);
+  const centerX = centerPixelPos.x + cellSize / 2;
+  const centerY = centerPixelPos.y + cellSize / 2;
+  const finalDiameter = radius * cellSize * 2;
+
+  // Create expanding ring
+  const ring = document.createElement('div');
+  ring.style.position = 'absolute';
+  ring.style.width = `${finalDiameter}px`;
+  ring.style.height = `${finalDiameter}px`;
+  ring.style.left = `${centerX}px`;
+  ring.style.top = `${centerY}px`;
+  ring.style.transform = 'translate(-50%, -50%)';
+  ring.style.borderRadius = '50%';
+  ring.style.border = `4px solid ${blastColor}`;
+  ring.style.boxShadow = `0 0 15px ${blastColor}, inset 0 0 15px ${blastColor}44`;
+  ring.style.pointerEvents = 'none';
+  ring.style.zIndex = '1500';
+
+  containerElement.appendChild(ring);
+  gsap.set(ring, { scale: 0, opacity: 1 });
+
+  // Expand ring
+  tl.to(ring, {
+    scale: 1,
+    opacity: 0,
+    duration: 0.4,
+    ease: 'power2.out',
+    onComplete: () => ring.remove(),
+  });
+
+  // Create tile flash effects on all tiles within radius
+  for (let r = -radius; r <= radius; r++) {
+    for (let c = -radius; c <= radius; c++) {
+      if (r * r + c * c <= radius * radius) {
+        const tilePos = {
+          row: centerPosition.row + r,
+          col: centerPosition.col + c,
+        };
+        const dist = Math.sqrt(r * r + c * c);
+        createTileFlash(tilePos, cellSize, containerElement, blastColor, 0.05 + dist * 0.05);
+      }
+    }
+  }
+
+  // Screen shake effect
+  tl.to(containerElement, {
+    x: 3,
+    duration: 0.05,
+    ease: 'none',
+    yoyo: true,
+    repeat: 4,
+  }, 0.1);
+
+  tl.set(containerElement, { x: 0 });
+
+  // Explosion particles
+  tl.add(() => {
+    for (let i = 0; i < 10; i++) {
+      const particle = document.createElement('div');
+      particle.style.position = 'absolute';
+      particle.style.left = `${centerX}px`;
+      particle.style.top = `${centerY}px`;
+      particle.style.width = '5px';
+      particle.style.height = '5px';
+      particle.style.borderRadius = '50%';
+      particle.style.backgroundColor = i % 2 === 0 ? blastColor : '#FFF';
+      particle.style.boxShadow = `0 0 4px ${blastColor}`;
+      particle.style.pointerEvents = 'none';
+      particle.style.zIndex = '1600';
+
+      containerElement.appendChild(particle);
+
+      const angle = (Math.PI * 2 * i) / 10;
+      const distance = 20 + Math.random() * 30;
+
+      gsap.to(particle, {
+        x: Math.cos(angle) * distance,
+        y: Math.sin(angle) * distance,
+        opacity: 0,
+        duration: 0.4,
+        ease: 'power2.out',
+        onComplete: () => particle.remove(),
+      });
+    }
+  }, 0.05);
+
+  return tl;
+}
+
+/**
+ * Summon Animation
+ * Duration: ~0.8s
+ * Effect: Portal swirl spawning a unit with spiraling particles
+ */
+export function animateSummon(
+  position: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  summonColor: string = '#9400D3'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const pixelPos = calculatePixelPosition(position, cellSize);
+  const centerX = pixelPos.x + cellSize / 2;
+  const centerY = pixelPos.y + cellSize / 2;
+  const portalSize = cellSize * 0.9;
+
+  // Create portal circle
+  const portal = document.createElement('div');
+  portal.style.position = 'absolute';
+  portal.style.width = `${portalSize}px`;
+  portal.style.height = `${portalSize}px`;
+  portal.style.left = `${centerX}px`;
+  portal.style.top = `${centerY}px`;
+  portal.style.transform = 'translate(-50%, -50%)';
+  portal.style.borderRadius = '50%';
+  portal.style.border = `3px solid ${summonColor}`;
+  portal.style.background = `radial-gradient(circle, ${summonColor}66 0%, ${summonColor}33 50%, transparent 100%)`;
+  portal.style.boxShadow = `0 0 20px ${summonColor}, inset 0 0 20px ${summonColor}66`;
+  portal.style.pointerEvents = 'none';
+  portal.style.zIndex = '1500';
+
+  containerElement.appendChild(portal);
+  gsap.set(portal, { scale: 0, rotation: 0, opacity: 1 });
+
+  // Scale up with rotation (0 to 720deg)
+  tl.to(portal, {
+    scale: 1,
+    rotation: 720,
+    duration: 0.5,
+    ease: 'power2.out',
+  });
+
+  // Add 8 particles spiraling inward toward center
+  tl.add(() => {
+    for (let i = 0; i < 8; i++) {
+      const particle = document.createElement('div');
+      particle.style.position = 'absolute';
+      particle.style.width = '6px';
+      particle.style.height = '6px';
+      particle.style.borderRadius = '50%';
+      particle.style.backgroundColor = i % 2 === 0 ? summonColor : '#FFF';
+      particle.style.boxShadow = `0 0 6px ${summonColor}`;
+      particle.style.pointerEvents = 'none';
+      particle.style.zIndex = '1600';
+
+      const angle = (Math.PI * 2 * i) / 8;
+      const startDist = portalSize * 0.8;
+      const startPX = centerX + Math.cos(angle) * startDist;
+      const startPY = centerY + Math.sin(angle) * startDist;
+
+      particle.style.left = `${startPX}px`;
+      particle.style.top = `${startPY}px`;
+      particle.style.transform = 'translate(-50%, -50%)';
+
+      containerElement.appendChild(particle);
+
+      gsap.to(particle, {
+        left: `${centerX}px`,
+        top: `${centerY}px`,
+        scale: 0,
+        opacity: 0,
+        duration: 0.3,
+        delay: i * 0.03,
+        ease: 'power2.in',
+        onComplete: () => particle.remove(),
+      });
+    }
+  }, 0.3);
+
+  // Fade out portal
+  tl.to(portal, {
+    opacity: 0,
+    scale: 0.5,
+    duration: 0.2,
+    ease: 'power2.in',
+    onComplete: () => portal.remove(),
+  }, '+=0.05');
+
+  return tl;
+}
+
+/**
+ * Teleport Animation
+ * Duration: ~0.5s
+ * Effect: Flash at origin, shadow trail, flash at destination
+ */
+export function animateTeleport(
+  fromPosition: GridPosition,
+  toPosition: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  teleportColor: string = '#4B0082'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const fromPixelPos = calculatePixelPosition(fromPosition, cellSize);
+  const toPixelPos = calculatePixelPosition(toPosition, cellSize);
+  const fromX = fromPixelPos.x + cellSize / 2;
+  const fromY = fromPixelPos.y + cellSize / 2;
+  const toX = toPixelPos.x + cellSize / 2;
+  const toY = toPixelPos.y + cellSize / 2;
+  const burstSize = cellSize * 0.8;
+
+  // Flash at origin (bright burst)
+  const originFlash = document.createElement('div');
+  originFlash.style.position = 'absolute';
+  originFlash.style.width = `${burstSize}px`;
+  originFlash.style.height = `${burstSize}px`;
+  originFlash.style.left = `${fromX}px`;
+  originFlash.style.top = `${fromY}px`;
+  originFlash.style.transform = 'translate(-50%, -50%)';
+  originFlash.style.borderRadius = '50%';
+  originFlash.style.background = `radial-gradient(circle, #FFF 0%, ${teleportColor} 50%, transparent 100%)`;
+  originFlash.style.boxShadow = `0 0 20px ${teleportColor}`;
+  originFlash.style.pointerEvents = 'none';
+  originFlash.style.zIndex = '1600';
+
+  containerElement.appendChild(originFlash);
+  gsap.set(originFlash, { scale: 0, opacity: 1 });
+
+  tl.to(originFlash, {
+    scale: 1.5,
+    opacity: 0,
+    duration: 0.15,
+    ease: 'power2.out',
+    onComplete: () => originFlash.remove(),
+  });
+
+  // Shadow trail: 3 dots staggered from origin to destination
+  for (let i = 0; i < 3; i++) {
+    const t = (i + 1) / 4;
+    const dotX = fromX + (toX - fromX) * t;
+    const dotY = fromY + (toY - fromY) * t;
+
+    const dot = document.createElement('div');
+    dot.style.position = 'absolute';
+    dot.style.width = '10px';
+    dot.style.height = '10px';
+    dot.style.left = `${dotX}px`;
+    dot.style.top = `${dotY}px`;
+    dot.style.transform = 'translate(-50%, -50%)';
+    dot.style.borderRadius = '50%';
+    dot.style.backgroundColor = teleportColor;
+    dot.style.boxShadow = `0 0 8px ${teleportColor}`;
+    dot.style.pointerEvents = 'none';
+    dot.style.zIndex = '1500';
+    dot.style.opacity = '0';
+
+    containerElement.appendChild(dot);
+
+    tl.to(dot, {
+      opacity: 0.8,
+      scale: 1,
+      duration: 0.05,
+      delay: i * 0.03,
+      ease: 'power2.out',
+    }, 0.1);
+
+    tl.to(dot, {
+      opacity: 0,
+      scale: 0.3,
+      duration: 0.15,
+      ease: 'power2.in',
+      onComplete: () => dot.remove(),
+    }, 0.2 + i * 0.03);
+  }
+
+  // Flash at destination
+  const destFlash = document.createElement('div');
+  destFlash.style.position = 'absolute';
+  destFlash.style.width = `${burstSize}px`;
+  destFlash.style.height = `${burstSize}px`;
+  destFlash.style.left = `${toX}px`;
+  destFlash.style.top = `${toY}px`;
+  destFlash.style.transform = 'translate(-50%, -50%)';
+  destFlash.style.borderRadius = '50%';
+  destFlash.style.background = `radial-gradient(circle, #FFF 0%, ${teleportColor} 50%, transparent 100%)`;
+  destFlash.style.boxShadow = `0 0 20px ${teleportColor}`;
+  destFlash.style.pointerEvents = 'none';
+  destFlash.style.zIndex = '1600';
+
+  containerElement.appendChild(destFlash);
+  gsap.set(destFlash, { scale: 0, opacity: 1 });
+
+  tl.to(destFlash, {
+    scale: 1.5,
+    opacity: 0,
+    duration: 0.15,
+    ease: 'power2.out',
+    onComplete: () => destFlash.remove(),
+  }, 0.3);
+
+  return tl;
+}
+
+/**
+ * Revive Animation
+ * Duration: ~1s
+ * Effect: Golden light column with rising sparkle particles
+ */
+export function animateRevive(
+  position: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  reviveColor: string = '#FFD700'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const pixelPos = calculatePixelPosition(position, cellSize);
+  const centerX = pixelPos.x + cellSize / 2;
+  const centerY = pixelPos.y + cellSize / 2;
+  const columnWidth = cellSize * 0.6;
+  const columnHeight = cellSize * 3;
+
+  // Create light column (extends upward from target)
+  const column = document.createElement('div');
+  column.style.position = 'absolute';
+  column.style.width = `${columnWidth}px`;
+  column.style.height = `${columnHeight}px`;
+  column.style.left = `${centerX}px`;
+  column.style.top = `${centerY}px`;
+  column.style.transform = 'translate(-50%, -100%)';
+  column.style.transformOrigin = 'bottom center';
+  column.style.background = `linear-gradient(to top, ${reviveColor} 0%, ${reviveColor}88 30%, ${reviveColor}22 70%, transparent 100%)`;
+  column.style.boxShadow = `0 0 20px ${reviveColor}66`;
+  column.style.borderRadius = `${columnWidth / 2}px ${columnWidth / 2}px 0 0`;
+  column.style.pointerEvents = 'none';
+  column.style.zIndex = '1500';
+
+  containerElement.appendChild(column);
+  gsap.set(column, { opacity: 0, scaleY: 0 });
+
+  // Animate: opacity 0 -> 1, scaleY 0 -> 1 (from bottom)
+  tl.to(column, {
+    opacity: 1,
+    scaleY: 1,
+    duration: 0.35,
+    ease: 'power2.out',
+  });
+
+  // Add sparkle particles rising upward (6 particles)
+  tl.add(() => {
+    for (let i = 0; i < 6; i++) {
+      const sparkle = document.createElement('div');
+      sparkle.style.position = 'absolute';
+      sparkle.style.width = '5px';
+      sparkle.style.height = '5px';
+      sparkle.style.borderRadius = '50%';
+      sparkle.style.backgroundColor = i % 2 === 0 ? reviveColor : '#FFF';
+      sparkle.style.boxShadow = `0 0 6px ${reviveColor}`;
+      sparkle.style.pointerEvents = 'none';
+      sparkle.style.zIndex = '1600';
+
+      const offsetX = (Math.random() - 0.5) * columnWidth;
+      sparkle.style.left = `${centerX + offsetX}px`;
+      sparkle.style.top = `${centerY}px`;
+      sparkle.style.transform = 'translate(-50%, -50%)';
+
+      containerElement.appendChild(sparkle);
+
+      gsap.to(sparkle, {
+        y: -(cellSize * 1.5 + Math.random() * cellSize),
+        x: (Math.random() - 0.5) * 20,
+        opacity: 0,
+        scale: 0.5,
+        duration: 0.5 + Math.random() * 0.3,
+        delay: i * 0.06,
+        ease: 'power2.out',
+        onComplete: () => sparkle.remove(),
+      });
+    }
+  }, 0.2);
+
+  // Hold briefly then fade out
+  tl.to(column, {
+    opacity: 0,
+    duration: 0.3,
+    ease: 'power2.in',
+    onComplete: () => column.remove(),
+  }, '+=0.15');
+
+  return tl;
+}
+
+/**
+ * Status Apply Animation
+ * Duration: ~0.3s
+ * Effect: Quick color flash for status effect application
+ */
+export function animateStatusApply(
+  targetElement: HTMLElement,
+  targetPosition: GridPosition,
+  cellSize: number,
+  containerElement: HTMLElement,
+  statusColor: string = '#FF4500'
+): gsap.core.Timeline {
+  const tl = gsap.timeline();
+
+  const targetPixelPos = calculatePixelPosition(targetPosition, cellSize);
+  const centerX = targetPixelPos.x + cellSize / 2;
+  const centerY = targetPixelPos.y + cellSize / 2;
+
+  // Create small icon-sized flash at target position
+  const flash = document.createElement('div');
+  flash.style.position = 'absolute';
+  flash.style.width = `${cellSize * 0.5}px`;
+  flash.style.height = `${cellSize * 0.5}px`;
+  flash.style.left = `${centerX}px`;
+  flash.style.top = `${centerY}px`;
+  flash.style.transform = 'translate(-50%, -50%)';
+  flash.style.borderRadius = '50%';
+  flash.style.background = `radial-gradient(circle, #FFF 0%, ${statusColor} 50%, transparent 100%)`;
+  flash.style.boxShadow = `0 0 12px ${statusColor}`;
+  flash.style.pointerEvents = 'none';
+  flash.style.zIndex = '1600';
+
+  containerElement.appendChild(flash);
+  gsap.set(flash, { scale: 0, opacity: 1 });
+
+  // Quick scale up and glow
+  tl.to(flash, {
+    scale: 1.3,
+    duration: 0.15,
+    ease: 'back.out(2)',
+  });
+
+  // Fade out
+  tl.to(flash, {
+    scale: 1.6,
+    opacity: 0,
+    duration: 0.15,
+    ease: 'power2.in',
+    onComplete: () => flash.remove(),
+  });
+
+  // Brief filter glow on target element (similar to animateSimpleBuff but quicker)
+  tl.to(targetElement, {
+    filter: `drop-shadow(0 0 8px ${statusColor}) brightness(1.15)`,
+    duration: 0.15,
+    ease: 'power2.out',
+    yoyo: true,
+    repeat: 1,
+  }, 0);
+
+  return tl;
+}
