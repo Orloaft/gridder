@@ -140,41 +140,24 @@ export function createBattleLayout(
         animationDelay: 0.8,
       });
 
-      // Inventory button - NEW!
-      occupants.push({
-        id: 'btn-inventory-wave',
-        type: GridOccupantType.Button,
-        position: { row: 7, col: 3 },
-        width: 2,
-        label: 'Manage Formation',
-        icon: '⚔️',
-        variant: 'primary',
-        description: 'Reposition heroes and equip items for the next wave',
-        onClick: () => {
-          // Open inventory management UI
-          const gameState = useGameStore.getState();
-          // Navigate to battle inventory screen
-          gameState.navigate(ScreenType.BattleInventory);
-        },
-        animationDelay: 0.85,
-      });
-
-      // Proceed button
+      // Continue button - takes player to formation management before next wave
       occupants.push({
         id: 'btn-proceed-wave',
         type: GridOccupantType.Button,
-        position: { row: 7, col: 6 },
+        position: { row: 7, col: 4 },
+        width: 2,
         label: nextWaveIsBoss ? 'Face Boss' : 'Continue',
-        icon: '→',
+        icon: '⚔️',
         variant: 'primary',
         description: nextWaveIsBoss
-          ? 'Continue to the final boss wave - defeat it for full rewards and bonus gems!'
-          : 'Continue to the next wave of enemies',
+          ? 'Prepare your formation for the final boss wave!'
+          : 'Manage your formation and prepare for the next wave',
         onClick: () => {
-          // Resume battle by advancing to next event
-          onNextEvent();
+          // Navigate to formation management — battle resumes from there
+          const gameState = useGameStore.getState();
+          gameState.navigate(ScreenType.BattleInventory);
         },
-        animationDelay: 0.9,
+        animationDelay: 0.85,
       });
 
       return occupants; // Return early - don't show normal battle UI

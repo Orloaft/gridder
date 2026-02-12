@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { doomsdaySystem } from '@/systems/DoomsdaySystem';
 
 interface TimePassageAnimationProps {
@@ -22,58 +22,76 @@ export function TimePassageAnimation({
 }: TimePassageAnimationProps) {
   const [animationPhase, setAnimationPhase] = useState<'entering' | 'showing' | 'exiting' | 'hidden'>('hidden');
   const [displayDay, setDisplayDay] = useState(previousDay);
-  const [isAnimating, setIsAnimating] = useState(false);
+
+  // Use ref for onComplete so it doesn't cause effect re-runs
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  // Track all timers in refs so cleanup always works
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const clearAllTimers = useCallback(() => {
+    timersRef.current.forEach(t => clearTimeout(t));
+    timersRef.current = [];
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    if (show && !isAnimating) {
-      // Prevent multiple animations from triggering
-      setIsAnimating(true);
+    if (!show) {
+      // When show becomes false, reset immediately
+      clearAllTimers();
+      setAnimationPhase('hidden');
+      return;
+    }
 
-      // Start animation sequence
-      setAnimationPhase('entering');
-      setDisplayDay(previousDay);
+    // Start animation sequence — clear any previous timers first
+    clearAllTimers();
+    setAnimationPhase('entering');
+    setDisplayDay(previousDay);
 
-      // Phase 1: Enter (fade in)
-      const enterTimeout = setTimeout(() => {
-        setAnimationPhase('showing');
+    // Phase 1: Enter (fade in) — 100ms
+    const t1 = setTimeout(() => {
+      setAnimationPhase('showing');
 
-        // Animate day counter
-        const dayIncrement = daysElapsed / 10; // Animate over 10 frames
-        let currentDay = previousDay;
-        const animateInterval = setInterval(() => {
-          currentDay += dayIncrement;
-          if (currentDay >= newDay) {
-            currentDay = newDay;
-            setDisplayDay(Math.floor(currentDay));
-            clearInterval(animateInterval);
-          } else {
-            setDisplayDay(Math.floor(currentDay));
+      // Animate day counter over ~500ms
+      const frames = Math.max(1, Math.min(5, daysElapsed));
+      const dayIncrement = daysElapsed / frames;
+      let currentDay = previousDay;
+      intervalRef.current = setInterval(() => {
+        currentDay += dayIncrement;
+        if (currentDay >= newDay) {
+          currentDay = newDay;
+          setDisplayDay(Math.floor(currentDay));
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
           }
-        }, 100);
-
-        // Phase 2: Show for a moment
-        const showTimeout = setTimeout(() => {
-          setAnimationPhase('exiting');
-
-          // Phase 3: Exit
-          const exitTimeout = setTimeout(() => {
-            setAnimationPhase('hidden');
-            setIsAnimating(false); // Reset flag after animation completes
-            if (onComplete) onComplete();
-          }, 500);
-
-          return () => clearTimeout(exitTimeout);
-        }, 1500);
-
-        return () => {
-          clearTimeout(showTimeout);
-          clearInterval(animateInterval);
-        };
+        } else {
+          setDisplayDay(Math.floor(currentDay));
+        }
       }, 100);
 
-      return () => clearTimeout(enterTimeout);
-    }
-  }, [show, daysElapsed, previousDay, newDay, onComplete]);
+      // Phase 2: Show for 800ms, then start exit
+      const t2 = setTimeout(() => {
+        setAnimationPhase('exiting');
+
+        // Phase 3: Exit over 400ms
+        const t3 = setTimeout(() => {
+          setAnimationPhase('hidden');
+          onCompleteRef.current?.();
+        }, 400);
+        timersRef.current.push(t3);
+      }, 800);
+      timersRef.current.push(t2);
+    }, 100);
+    timersRef.current.push(t1);
+
+    return () => clearAllTimers();
+  }, [show, daysElapsed, previousDay, newDay, clearAllTimers]);
 
   if (animationPhase === 'hidden') return null;
 
@@ -112,7 +130,7 @@ export function TimePassageAnimation({
     <div
       className={`fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none ${getAnimationClass()}`}
       style={{
-        transition: 'opacity 500ms ease-in-out',
+        transition: 'opacity 400ms ease-in-out',
         background: `radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.8) 100%)`
       }}
     >
@@ -244,11 +262,11 @@ const globalStyles = `
 }
 
 .animate-fade-in {
-  animation: fade-in 0.5s ease-out forwards;
+  animation: fade-in 0.3s ease-out forwards;
 }
 
 .animate-fade-out {
-  animation: fade-out 0.5s ease-in forwards;
+  animation: fade-out 0.4s ease-in forwards;
 }
 
 .animate-float {

@@ -332,14 +332,20 @@ export function createBattleSlice(set: StoreSet, get: StoreGet) {
         const hasMoreWaves = battle.currentWave < battle.totalWaves;
 
         if (hasMoreWaves && !battle.winner) {
-          // More waves remaining but no events - this means wave completed and we need formation management
-
-          // A short delay to allow the last visuals to settle.
-          setTimeout(() => {
-            state.navigate(ScreenType.BattleInventory);
-          }, 1000); // 1s delay
-
-          return; // Explicitly stop, preventing fall-through to victory/defeat logic.
+          // More waves remaining — stay on Battle screen.
+          // Regenerate layout so the wave decision UI (continue/retreat) renders.
+          const waveDecisionOccupants = createBattleLayout(
+            state.currentBattle,
+            nextIndex,
+            state.advanceBattleEvent,
+            state.battleSpeed,
+            () => {
+              const newSpeed = state.battleSpeed === 1 ? 4 : state.battleSpeed === 4 ? 8 : 1;
+              state.setBattleSpeed(newSpeed);
+            }
+          );
+          set({ gridOccupants: waveDecisionOccupants });
+          return;
         }
 
         // Battle truly finished - handle victory/defeat
@@ -771,8 +777,17 @@ export function createBattleSlice(set: StoreSet, get: StoreGet) {
       // 3. Re-initialize the simulator with the current state
       const simulator = new DeterministicBattleSimulatorV2(heroesFromFormation, allEnemiesForStage);
 
-      // 4. Simulate ONLY the next wave, passing in existing events
+      // 4. Simulate ONLY the next wave, passing in existing events for tick continuity
       const newBattleState = simulator.simulateWave(nextWaveNumber, currentBattle.events);
+
+      // Strip old events — only keep events generated for this new wave.
+      // Old events were passed to simulateWave for tick continuity but must not be
+      // stored in the new state, otherwise:
+      //   - auto-advance would replay old WaveStart events (resetting currentWave, hiding enemies)
+      //   - the old WaveTransition at events[N-1] tricks BattleLayout into showing
+      //     the wave decision UI again, creating an infinite loop
+      const oldEventCount = currentBattle.events.length;
+      newBattleState.events = newBattleState.events.slice(oldEventCount);
 
       // 5. Reset hero positions to formation (like startBattle does for wave 1).
       //    The simulation leaves heroes at post-combat/post-transition positions,
@@ -824,6 +839,7 @@ export function createBattleSlice(set: StoreSet, get: StoreGet) {
           ...newBattleState, // overwrite with new events, units, etc.
           currentWave: nextWaveNumber, // Ensure wave number is updated
         },
+        battleEventIndex: 0, // Start from beginning — events array only has new wave events
         isFormationUserModified: false, // Reset formation modification flag for the new wave
       });
 
