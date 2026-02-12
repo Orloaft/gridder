@@ -16,6 +16,7 @@ import { DoomsdayEventModal } from '@/components/DoomsdayEventModal';
 import { TimePassageAnimation } from '@/components/TimePassageAnimation';
 import { HeroUnlockPanel } from '@/components/HeroUnlockPanel';
 import RetreatConfirmation from '@/components/Modals/RetreatConfirmation';
+import { RewardRevealOverlay } from '@/components/RewardRevealOverlay';
 import { animateGridTransition, animateGridEntrance } from '@/animations/gridTransitions';
 import { audioManager } from '@/utils/audioManager';
 import { getStageById } from '@/data/stages';
@@ -68,7 +69,7 @@ export default function Home() {
   usePositionManager();
 
   // Handle reward reveal lifecycle
-  useRewardReveal();
+  const rewardReveal = useRewardReveal();
 
   // Handle doomsday system
   const {
@@ -589,6 +590,18 @@ export default function Home() {
           />
         </div>
       )}
+
+      {/* Reward Reveal Overlay */}
+      <RewardRevealOverlay
+        active={rewardReveal.overlayActive}
+        phase={rewardReveal.phase}
+        revealState={rewardReveal.revealState}
+        rewards={rewardReveal.rewards}
+        currentRevealItem={rewardReveal.currentRevealItem}
+        currentRevealIndex={rewardReveal.currentRevealIndex}
+        onSkip={rewardReveal.onSkip}
+        onContinue={rewardReveal.onContinue}
+      />
     </>
   );
 }

@@ -1,14 +1,31 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { ScreenType } from '@/types/progression.types';
-import { RewardRevealManager, RevealPhase } from '@/systems/RewardRevealManager';
+import {
+  RewardRevealManager,
+  RevealPhase,
+  RevealState,
+  BattleRewards,
+  RewardItem,
+} from '@/systems/RewardRevealManager';
 import { createRewardRevealLayout } from '@/screens/RewardReveal/RewardRevealLayout';
 
+export interface RewardRevealHookResult {
+  overlayActive: boolean;
+  phase: RevealPhase;
+  revealState: RevealState | null;
+  rewards: BattleRewards | null;
+  currentRevealItem: RewardItem | null;
+  currentRevealIndex: number;
+  onSkip: () => void;
+  onContinue: () => void;
+}
+
 /**
- * Hook to manage the reward reveal lifecycle
- * Automatically starts the reveal when entering the RewardReveal screen
+ * Hook to manage the reward reveal lifecycle.
+ * Returns overlay state for RewardRevealOverlay + updates grid occupants for items.
  */
-export function useRewardReveal() {
+export function useRewardReveal(): RewardRevealHookResult {
   const {
     currentScreen,
     pendingRewards,
@@ -22,83 +39,104 @@ export function useRewardReveal() {
   const managerRef = useRef<RewardRevealManager | null>(null);
   const hasStartedRef = useRef(false);
 
+  // Overlay state
+  const [phase, setPhase] = useState<RevealPhase>(RevealPhase.VictorySplash);
+  const [revealState, setRevealState] = useState<RevealState | null>(null);
+  const [currentRevealItem, setCurrentRevealItem] = useState<RewardItem | null>(null);
+  const [currentRevealIndex, setCurrentRevealIndex] = useState<number>(-1);
+
+  const overlayActive = currentScreen === ScreenType.RewardReveal && !!pendingRewards;
+
+  // Convert pendingRewards to BattleRewards
+  const rewards: BattleRewards | null = pendingRewards
+    ? {
+        goldEarned: pendingRewards.goldEarned,
+        gemsEarned: pendingRewards.gemsEarned,
+        items: pendingRewards.items,
+        breakdown: (pendingRewards as any).breakdown,
+      }
+    : null;
+
+  const handleSkip = useCallback(() => {
+    managerRef.current?.skip();
+  }, []);
+
+  const handleContinue = useCallback(() => {
+    const state = useGameStore.getState();
+
+    // Apply rewards
+    if (state.pendingRewards) {
+      state.addGold(state.pendingRewards.goldEarned);
+      state.addGems(state.pendingRewards.gemsEarned);
+    }
+
+    // Clear
+    state.setPendingRewards(null);
+
+    // Stop manager
+    managerRef.current?.stop();
+    hasStartedRef.current = false;
+
+    // Reset overlay state
+    setPhase(RevealPhase.VictorySplash);
+    setRevealState(null);
+    setCurrentRevealItem(null);
+    setCurrentRevealIndex(-1);
+
+    // Reset grid size
+    state.setGridSize(8, 8);
+
+    // Navigate
+    if (state.levelUpQueue && state.levelUpQueue.length > 0) {
+      state.processNextLevelUp();
+    } else {
+      if ((window as any).__gridNavigate) {
+        (window as any).__gridNavigate(ScreenType.LocationMap);
+      } else {
+        state.navigate(ScreenType.LocationMap);
+      }
+    }
+  }, []);
+
   useEffect(() => {
-    // Only run when on reward reveal screen with pending rewards
     if (currentScreen !== ScreenType.RewardReveal || !pendingRewards) {
       hasStartedRef.current = false;
       return;
     }
 
-    // Prevent re-starting if already started
-    if (hasStartedRef.current) {
-      return;
-    }
-
+    if (hasStartedRef.current) return;
     hasStartedRef.current = true;
 
-    // Create reward reveal manager
-    const manager = new RewardRevealManager(pendingRewards);
+    const battleRewards: BattleRewards = {
+      goldEarned: pendingRewards.goldEarned,
+      gemsEarned: pendingRewards.gemsEarned,
+      items: pendingRewards.items,
+      breakdown: (pendingRewards as any).breakdown,
+    };
+
+    const manager = new RewardRevealManager(battleRewards);
     managerRef.current = manager;
 
-    // Handle skip
-    const handleSkip = () => {
-      manager.skip();
-    };
+    manager.start({
+      onStateUpdate: (state) => {
+        setRevealState({ ...state });
 
-    // Handle continue (after summary phase)
-    const handleContinue = () => {
-      // Get fresh state from store
-      const state = useGameStore.getState();
+        // Update grid occupants (items that have landed)
+        const gridRewards = manager.getRewards();
+        const occupants = createRewardRevealLayout(state, gridRewards, handleSkip);
+        updateGridOccupants(occupants);
+      },
 
-      // Apply rewards to player
-      if (state.pendingRewards) {
-        state.addGold(state.pendingRewards.goldEarned);
-        state.addGems(state.pendingRewards.gemsEarned);
-        // Items were already added during battle victory
-      }
+      onItemReveal: (item, index) => {
+        setCurrentRevealItem(item);
+        setCurrentRevealIndex(index);
+      },
 
-      // Clear pending rewards
-      state.setPendingRewards(null);
-
-      // Stop the reveal manager
-      manager.stop();
-      hasStartedRef.current = false;
-
-      // Reset grid size to default (8x8) before navigating back
-      state.setGridSize(8, 8);
-
-      // Check if any heroes need to level up
-      if (state.levelUpQueue && state.levelUpQueue.length > 0) {
-        state.processNextLevelUp();
-      } else {
-        // No level ups, navigate back to location map
-        if ((window as any).__gridNavigate) {
-          (window as any).__gridNavigate(ScreenType.LocationMap);
-        } else {
-          state.navigate(ScreenType.LocationMap);
-        }
-      }
-    };
-
-    // Start the reveal sequence
-    manager.start((state) => {
-      // Update grid occupants based on current reveal state
-      const particles = manager.getParticleManager().getParticles();
-      const rewards = manager.getRewards();
-
-      const newOccupants = createRewardRevealLayout(
-        state,
-        rewards,
-        particles,
-        handleSkip,
-        handleContinue,
-        navigate
-      );
-
-      updateGridOccupants(newOccupants);
+      onPhaseChange: (newPhase) => {
+        setPhase(newPhase);
+      },
     });
 
-    // Cleanup on unmount
     return () => {
       if (managerRef.current) {
         managerRef.current.stop();
@@ -106,5 +144,16 @@ export function useRewardReveal() {
       }
       hasStartedRef.current = false;
     };
-  }, [currentScreen, pendingRewards, updateGridOccupants, navigate]);
+  }, [currentScreen, pendingRewards, updateGridOccupants, handleSkip]);
+
+  return {
+    overlayActive,
+    phase,
+    revealState,
+    rewards,
+    currentRevealItem,
+    currentRevealIndex,
+    onSkip: handleSkip,
+    onContinue: handleContinue,
+  };
 }

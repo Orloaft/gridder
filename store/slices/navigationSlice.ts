@@ -261,6 +261,14 @@ export function createNavigationSlice(set: StoreSet, get: StoreGet) {
             const battleHero = state.currentBattle!.heroes.find(h => h.instanceId === hero.instanceId);
             return battleHero && battleHero.isAlive;
           });
+
+          // Clean dead heroes from the formation dict so they can't occupy grid positions
+          const aliveIds = new Set(battleHeroes.map(h => h.instanceId));
+          for (const heroId of Object.keys(currentFormation)) {
+            if (!aliveIds.has(heroId)) {
+              delete currentFormation[heroId];
+            }
+          }
         }
 
         // Use the current formation data (either initialized or existing)
@@ -271,6 +279,14 @@ export function createNavigationSlice(set: StoreSet, get: StoreGet) {
             // Only allow repositioning heroes that were part of the initial team
             if (!state.initialBattleTeam.includes(heroId)) {
               return;
+            }
+
+            // Block dead heroes from being placed on the grid
+            if (state.currentBattle) {
+              const battleHero = state.currentBattle.heroes.find(h => h.instanceId === heroId);
+              if (!battleHero || !battleHero.isAlive) {
+                return;
+              }
             }
 
             // The position we receive is the final display position where user wants hero

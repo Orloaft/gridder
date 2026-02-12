@@ -177,7 +177,7 @@ export function createBattleFormationLayout(
   });
   console.log('[BattleFormation] === End Hero Positioning ===');
 
-  // Available heroes section (row 7) - All roster heroes not positioned
+  // Available heroes section (row 7) - Alive heroes not currently positioned
   occupants.push({
     id: 'available-heroes-label',
     type: GridOccupantType.Decoration,
@@ -187,12 +187,18 @@ export function createBattleFormationLayout(
     animationDelay: 0.4,
   });
 
-  // Only show heroes from initial battle team (not the entire roster)
+  // Build a set of alive hero IDs from battleHeroes (already filtered for isAlive)
+  const aliveHeroIds = new Set(battleHeroes.map(h => h.instanceId));
+
+  // Only show alive heroes from initial battle team that aren't positioned
   let availableIndex = 0;
   allHeroes.forEach((hero) => {
-    // Only show heroes that were part of the initial battle team
+    // Only show heroes that were part of the initial battle team AND are still alive
     if (!initialBattleTeam.includes(hero.instanceId)) {
       return; // Skip heroes not in initial team
+    }
+    if (!aliveHeroIds.has(hero.instanceId)) {
+      return; // Skip dead heroes — they cannot be repositioned
     }
 
     const isPositioned = nextWaveFormation[hero.instanceId] !== undefined;
@@ -215,11 +221,6 @@ export function createBattleFormationLayout(
         onDragStart: () => {
           (window as any).__draggedHeroId = hero.instanceId;
           (window as any).__draggedFromFormation = false;
-          console.log(`[BattleFormation] Started dragging available hero ${hero.name}`);
-          console.log('[BattleFormation] Available hero drag started:', {
-            draggedHeroId: (window as any).__draggedHeroId,
-            draggedFromFormation: (window as any).__draggedFromFormation
-          });
         },
         // Accept item drops for equipping
         onItemDrop: (itemId: string) => {
@@ -231,10 +232,8 @@ export function createBattleFormationLayout(
                                  item.slot === 'consumable';
 
             if (isConsumable) {
-              console.log('[BattleFormation] Using consumable on available hero');
               onUseConsumable(itemId, hero.instanceId);
             } else {
-              console.log('[BattleFormation] Equipping item on available hero');
               onEquipItem(itemId, hero.instanceId);
             }
           }
